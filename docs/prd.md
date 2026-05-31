@@ -692,19 +692,137 @@ Reports must avoid:
 - Hiding failed/unsupported cases from denominator math.
 - Mixing cold and warm cache results in one metric.
 
-## Security Requirements
+## Enterprise Security Requirements
+
+AgentBlaster must be built with security as a product requirement, not as a later hardening pass. The default posture should be safe for corporate laptops, enterprise CI, private model gateways, and air-gapped or network-restricted environments.
+
+### Security Principles
+
+- Secure by default: risky features are opt-in, visible, and logged.
+- Least privilege: benchmark runs should only access the endpoints, files, tools, and network targets explicitly configured for the run.
+- Local-first privacy: local benchmark data should remain local unless the user explicitly exports or uploads it.
+- No secret leakage: credentials must never appear in logs, traces, reports, screenshots, errors, or generated artifacts.
+- Auditability: security-relevant actions must be attributable, timestamped, and reproducible.
+- Policy as config: enterprise controls must be enforceable by checked-in policy files and CI flags.
+- Separation of duties: report viewers should not need access to raw prompts, raw responses, or secrets.
+
+### Threat Model
+
+AgentBlaster must explicitly defend against:
+
+- API key leakage through logs, traces, report bundles, exception text, screenshots, shell history, and debug output.
+- Prompt and response data leakage from corporate documents, source code, customer data, or proprietary benchmark cases.
+- Accidental upload of private traces to remote providers.
+- Malicious or compromised benchmark cases that request shell, file, browser, network, or MCP tool access.
+- Tool poisoning through MCP tool descriptions, skill files, or benchmark-provided tool schemas.
+- Prompt injection inside test fixtures, tool results, documents, or fetched web content.
+- SSRF-like behavior through benchmark cases that cause requests to private network resources.
+- Supply-chain risk from optional agent framework packages, plugins, dashboards, report renderers, and test data.
+- Insecure dashboard exposure on shared networks.
+- Cross-run contamination through cached prompts, persistent sessions, stored traces, or shared output directories.
+
+### Secrets And Credentials
 
 - API keys should be stored in OS-native credential stores when the optional secret backend is installed and available, with Apple Keychain as the preferred macOS implementation.
 - API keys must never be printed, logged, committed, exported in reports, or stored in raw trace artifacts.
 - Environment variable and stdin-based secret entry must be supported for CI and headless environments.
-- Plaintext secret files are an explicit opt-in fallback only.
+- Plaintext secret files are an explicit opt-in fallback only and must trigger a warning.
+- Secret values must be redacted before structured logging, exception formatting, trace capture, and report generation.
+- Provider auth headers must be redacted by name and by value fingerprint.
+- CLI commands that accept secrets must support stdin and must not require putting secrets in argv.
+- Run manifests may include secret references, never secret values.
+- Secret lookup failures must fail closed and avoid printing nearby environment values.
+
+### Data Protection And Retention
+
+- Raw request and response capture must be configurable per run: `off`, `redacted`, or `full`.
+- Default capture mode for remote providers should be `redacted`.
+- Default capture mode for local providers can be `redacted` unless the user opts into `full`.
+- Reports must support a public-safe mode that excludes raw prompts, raw responses, file paths, usernames, hostnames, local IPs, and environment variables.
+- Run artifacts must include a retention policy field.
+- A cleanup command must delete raw traces, caches, temporary files, and generated report bundles for a run.
+- PII and secret redaction should be regex-based initially, with a pluggable redaction pipeline later.
+- Corporate users must be able to run with `--no-raw-traces`.
+
+### Execution Sandbox
+
 - Default suite must not execute host-mutating tools.
 - Tool execution tests run in temp sandboxes.
 - Shell, file write, browser, and network tools require explicit opt-in.
+- File-system tests must use allowlisted working directories.
+- Network tests must use allowlisted hosts and ports.
 - MCP tests use mock MCP servers by default.
-- Report artifacts redact API keys and auth headers.
-- Raw traces can be disabled or redacted.
 - Third-party Pi/OpenCode/OpenClaw/Hermes packages are never installed automatically.
+- Agent framework integration tests must distinguish prompt-shape emulation from executing the real framework.
+- Destructive tool fixtures must be disabled unless the user passes a high-friction flag such as `--allow-host-tools`.
+
+### Network Security
+
+- Remote providers must be explicitly configured and labeled.
+- The runner must support `--offline` mode that blocks all remote providers and web-dependent tests.
+- The runner must support provider allowlists and deny remote fallback by default.
+- Corporate proxy configuration must be supported through standard environment variables and explicit provider config.
+- TLS verification must be enabled by default.
+- Custom CA bundles must be configurable for enterprise gateways.
+- Insecure TLS must require explicit opt-in and must be visible in reports.
+- Dashboard servers bind to `127.0.0.1` by default.
+- Dashboard network binding, auth disablement, and CORS relaxation require explicit flags.
+
+### Policy Controls
+
+AgentBlaster should support a policy file, for example `agentblaster.policy.yaml`, with controls for:
+
+- Allowed providers.
+- Allowed API contracts.
+- Allowed base URL domains.
+- Allowed local ports.
+- Allowed file-system roots.
+- Allowed network targets.
+- Raw trace mode limits.
+- Report redaction requirements.
+- Dashboard bind policy.
+- Secret backend policy.
+- Maximum concurrency.
+- Maximum prompt tokens.
+- Maximum remote spend or request count.
+- Whether shell, file write, browser, web, MCP, and third-party framework execution are allowed.
+
+Policy violations must fail closed with a clear error and an audit event.
+
+### Audit Logging
+
+- Security-relevant events must be written to a structured audit log when enabled.
+- Events include provider creation, secret reference changes, remote run start, dashboard start, raw trace mode, policy violations, tool execution, MCP server start, and report export.
+- Audit logs must redact secrets and sensitive prompt content by default.
+- Audit logs should be JSONL for ingestion into corporate logging systems.
+
+### Dashboard Security
+
+- Dashboard is optional and must be disabled by default in CLI-only installs.
+- Dashboard binds to localhost by default.
+- Remote dashboard access requires explicit bind host and authentication configuration.
+- Report downloads must respect redaction mode.
+- The dashboard must never expose raw secrets.
+- The dashboard should show a visible security posture banner for remote providers, raw traces, insecure TLS, and host-tool execution.
+
+### Supply Chain
+
+- Dependencies should be minimal and pinned in lock files for releases.
+- Optional extras must be separated by capability: `secrets`, `dashboard`, `reports`, `dev`.
+- Release artifacts should include SBOM generation as a target.
+- CI should include dependency vulnerability scanning.
+- Benchmark fixtures imported or adapted from public datasets must record provenance and license.
+- Third-party plugins or framework packages must never auto-install during a benchmark run.
+
+### Compliance-Oriented Features
+
+- Redacted report mode for external sharing.
+- Full internal report mode for private engineering diagnostics.
+- Reproducibility manifest without secrets.
+- Signed run manifests in later phases.
+- Export controls for JSONL, CSV, Parquet, HTML, and PDF with redaction mode recorded.
+- Configurable data retention and cleanup.
+- Air-gapped local-only operation for local engines and bundled datasets.
 
 ## MVP Scope
 
@@ -726,6 +844,9 @@ Reports must avoid:
 - HTML report.
 - Failure classification.
 - Reproducibility manifest.
+- Secret redaction for logs, traces, and reports.
+- `--no-raw-traces` run mode.
+- Localhost-only dashboard default if dashboard is enabled.
 
 ### MVP Should Have
 
@@ -738,6 +859,8 @@ Reports must avoid:
 - Agent profile suite for OpenCode, OpenClaw, Hermes, and Pi.
 - Report PNG exports.
 - DuckDB/Parquet export.
+- `agentblaster.policy.yaml` enforcement for provider allowlists, raw trace mode, dashboard binding, and host-tool execution.
+- Structured security audit log.
 
 ### MVP Could Have
 
@@ -747,6 +870,7 @@ Reports must avoid:
 - LLM-as-judge failure summaries.
 - Public static leaderboard generator.
 - Provider cost estimation for remote API runs.
+- SBOM generation and dependency vulnerability scan target.
 
 ## Phase Plan
 
@@ -768,6 +892,7 @@ Exit criteria:
 - Add tool-call, structured-output, prefill/cache, and concurrency suites.
 - Add failure classification.
 - Add report builder.
+- Add baseline enterprise controls: secret redaction, no-raw-traces mode, local-only mode, provider allowlists, and localhost-only dashboard defaults.
 
 Exit criteria:
 
@@ -781,6 +906,7 @@ Exit criteria:
 - Add Ollama native and LM Studio native stats collection.
 - Add Prometheus scraping.
 - Add MCP mock server workloads.
+- Add structured audit logs and policy-file enforcement for host tools, network targets, raw traces, and remote providers.
 
 Exit criteria:
 
@@ -794,6 +920,7 @@ Exit criteria:
 - Add chart export.
 - Add PDF report export.
 - Add static report bundles.
+- Add dashboard authentication options, redacted report downloads, and security posture indicators.
 
 Exit criteria:
 
@@ -805,6 +932,7 @@ Exit criteria:
 - Add cloud reference baselines.
 - Add signed run manifests.
 - Add reproducibility verifier.
+- Add SBOM/release provenance artifacts and optional signed report bundles.
 
 Exit criteria:
 
@@ -820,6 +948,9 @@ Exit criteria:
 - Should public comparisons include cloud models, or keep cloud baselines separate to avoid confusing local-vs-remote claims?
 - Which OS keyring backends should be tested in CI or manual release checks beyond macOS Keychain?
 - Which hosted OpenAI-compatible providers should ship as first-party presets versus user-defined provider profiles?
+- What enterprise policy schema should be stable for v1: simple YAML, OPA/Rego integration, or both?
+- Which redaction patterns should be built in for source code, customer data, and common API-key formats?
+- Should dashboard authentication be local password, token file, reverse-proxy only, or all of these?
 
 ## Success Metrics
 
