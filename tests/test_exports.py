@@ -31,6 +31,8 @@ def test_export_results_writes_jsonl_and_csv(tmp_path) -> None:
         input_tokens=2,
         output_tokens=1,
         total_tokens=3,
+        load_ms=25.0,
+        tokens_per_second_decode=100.0,
         message="ok",
     )
     (run_dir / "manifest.json").write_text(manifest.model_dump_json(), encoding="utf-8")
@@ -47,3 +49,5 @@ def test_export_results_writes_jsonl_and_csv(tmp_path) -> None:
         rows = list(csv.DictReader(handle))
     assert rows[0]["case_id"] == "case-one"
     assert rows[0]["ok"] == "True"
+    assert rows[0]["load_ms"] == "25.0"
+    assert rows[0]["tokens_per_second_decode"] == "100.0"

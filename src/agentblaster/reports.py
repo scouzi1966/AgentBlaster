@@ -103,6 +103,8 @@ def write_html_report(run_dir: Path) -> Path:
         <th>Input</th>
         <th>Output</th>
         <th>Total</th>
+        <th>Prefill tok/s</th>
+        <th>Decode tok/s</th>
         <th>Message</th>
       </tr>
     </thead>
@@ -143,6 +145,8 @@ def _result_row(result: BenchmarkResult) -> str:
   <td>{_cell(result.input_tokens)}</td>
   <td>{_cell(result.output_tokens)}</td>
   <td>{_cell(result.total_tokens)}</td>
+  <td>{_cell(result.tokens_per_second_prefill)}</td>
+  <td>{_cell(result.tokens_per_second_decode)}</td>
   <td>{html.escape(result.message)}</td>
 </tr>"""
 

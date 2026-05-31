@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import httpx
 
-from agentblaster.adapters import AnthropicCompatibleAdapter, OpenAICompatibleAdapter, extract_openai_tool_names
+from agentblaster.adapters import (
+    AnthropicCompatibleAdapter,
+    OllamaNativeAdapter,
+    OpenAICompatibleAdapter,
+    adapter_for,
+    extract_openai_tool_names,
+)
 from agentblaster.models import ApiContract, BenchmarkCase, ProviderConfig, SecretRef
 from agentblaster.secrets import EnvironmentSecretStore, SecretResolver
 
@@ -229,6 +235,75 @@ def test_extract_openai_tool_names_ignores_malformed_blocks() -> None:
         "x"
     ]
     assert extract_openai_tool_names({"choices": [{"message": {"tool_calls": [{"function": {}}]}}]}) == []
+
+
+def test_ollama_native_probe_reads_tags() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://example.com/api/tags"
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "qwen-test"}, {"model": "gemma-test"}]},
+            headers={"content-type": "application/json"},
+        )
+
+    provider = ProviderConfig(
+        name="ollama-native",
+        contract=ApiContract.NATIVE,
+        base_url="http://example.com",
+        native_adapter="ollama",
+    )
+    adapter = OllamaNativeAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    result = adapter.probe()
+
+    assert result.ok is True
+    assert result.models == ["qwen-test", "gemma-test"]
+
+
+def test_ollama_native_chat_posts_api_chat_and_extracts_metrics() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://example.com/api/chat"
+        payload = json_loads_request(request)
+        assert payload["stream"] is False
+        assert payload["options"]["num_predict"] == 16
+        assert payload["messages"][0]["content"] == "Reply with exactly: agentblaster-ok"
+        return httpx.Response(
+            200,
+            json={
+                "message": {"role": "assistant", "content": "agentblaster-ok"},
+                "prompt_eval_count": 10,
+                "prompt_eval_duration": 100_000_000,
+                "eval_count": 5,
+                "eval_duration": 50_000_000,
+                "load_duration": 25_000_000,
+            },
+            headers={"content-type": "application/json"},
+        )
+
+    provider = ProviderConfig(
+        name="ollama-native",
+        contract=ApiContract.NATIVE,
+        base_url="http://example.com",
+        native_adapter="ollama",
+    )
+    adapter = OllamaNativeAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    response = adapter.smoke_chat("qwen-test")
+
+    assert response.status_code == 200
+    assert response.text == "agentblaster-ok"
+    assert response.raw["eval_count"] == 5
+
+
+def test_adapter_for_resolves_ollama_native_adapter() -> None:
+    provider = ProviderConfig(
+        name="ollama-native",
+        contract=ApiContract.NATIVE,
+        base_url="http://example.com",
+        native_adapter="ollama",
+    )
+
+    assert isinstance(adapter_for(provider), OllamaNativeAdapter)
 
 
 def json_loads_request(request: httpx.Request):

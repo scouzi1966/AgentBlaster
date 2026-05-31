@@ -243,6 +243,7 @@ def result_from_response(
     raw_response_path: str | None,
 ) -> BenchmarkResult:
     input_tokens, output_tokens, total_tokens = normalize_usage(response.contract, response.raw)
+    timings = normalize_timings(response.contract, response.raw, input_tokens=input_tokens, output_tokens=output_tokens)
     assertion_ok, assertion_message = evaluate_case_assertions(case, response)
     ok = 200 <= response.status_code < 300 and assertion_ok
     message = "ok" if ok else assertion_message or response.text[:240] or f"HTTP {response.status_code}"
@@ -260,6 +261,11 @@ def result_from_response(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
+        load_ms=timings["load_ms"],
+        prompt_eval_ms=timings["prompt_eval_ms"],
+        decode_ms=timings["decode_ms"],
+        tokens_per_second_prefill=timings["tokens_per_second_prefill"],
+        tokens_per_second_decode=timings["tokens_per_second_decode"],
         failure_class=None if ok else "model_quality",
         message=message,
         raw_response_path=raw_response_path,
@@ -334,6 +340,14 @@ def _lookup_path(value: Any, path: str) -> Any:
 
 
 def normalize_usage(contract: ApiContract, raw: dict) -> tuple[int | None, int | None, int | None]:
+    if contract is ApiContract.NATIVE:
+        input_tokens = _optional_int(raw.get("prompt_eval_count"))
+        output_tokens = _optional_int(raw.get("eval_count"))
+        total_tokens = None
+        if input_tokens is not None or output_tokens is not None:
+            total_tokens = (input_tokens or 0) + (output_tokens or 0)
+        return input_tokens, output_tokens, total_tokens
+
     usage = raw.get("usage")
     if not isinstance(usage, dict):
         return None, None, None
@@ -357,6 +371,34 @@ def normalize_usage(contract: ApiContract, raw: dict) -> tuple[int | None, int |
     return None, None, None
 
 
+def normalize_timings(
+    contract: ApiContract,
+    raw: dict,
+    *,
+    input_tokens: int | None,
+    output_tokens: int | None,
+) -> dict[str, float | None]:
+    if contract is not ApiContract.NATIVE:
+        return {
+            "load_ms": None,
+            "prompt_eval_ms": None,
+            "decode_ms": None,
+            "tokens_per_second_prefill": None,
+            "tokens_per_second_decode": None,
+        }
+
+    load_ms = _ns_to_ms(raw.get("load_duration"))
+    prompt_eval_ms = _ns_to_ms(raw.get("prompt_eval_duration"))
+    decode_ms = _ns_to_ms(raw.get("eval_duration"))
+    return {
+        "load_ms": load_ms,
+        "prompt_eval_ms": prompt_eval_ms,
+        "decode_ms": decode_ms,
+        "tokens_per_second_prefill": _tokens_per_second(input_tokens, prompt_eval_ms),
+        "tokens_per_second_decode": _tokens_per_second(output_tokens, decode_ms),
+    }
+
+
 def _optional_int(value) -> int | None:
     if value is None:
         return None
@@ -364,3 +406,16 @@ def _optional_int(value) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _ns_to_ms(value) -> float | None:
+    integer = _optional_int(value)
+    if integer is None:
+        return None
+    return round(integer / 1_000_000, 3)
+
+
+def _tokens_per_second(tokens: int | None, duration_ms: float | None) -> float | None:
+    if tokens is None or duration_ms is None or duration_ms <= 0:
+        return None
+    return round(tokens / (duration_ms / 1000), 3)

@@ -11,6 +11,7 @@ class ProviderPreset(BaseModel):
     description: str
     contract: ApiContract
     base_url: str
+    native_adapter: str | None = None
     remote: bool = False
 
     def to_provider(self, *, name: str | None = None, base_url: str | None = None) -> ProviderConfig:
@@ -18,6 +19,7 @@ class ProviderPreset(BaseModel):
             name=name or self.name,
             contract=self.contract,
             base_url=base_url or self.base_url,
+            native_adapter=self.native_adapter,
             remote=self.remote,
         )
 
@@ -40,6 +42,13 @@ LOCAL_ENGINE_PRESETS: dict[str, ProviderPreset] = {
         description="Ollama OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:11434/v1",
+    ),
+    "ollama-native": ProviderPreset(
+        name="ollama-native",
+        description="Ollama native local server with engine-native metrics",
+        contract=ApiContract.NATIVE,
+        base_url="http://127.0.0.1:11434",
+        native_adapter="ollama",
     ),
     "lm-studio": ProviderPreset(
         name="lm-studio",

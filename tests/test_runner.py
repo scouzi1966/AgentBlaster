@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from agentblaster.models import AdapterResponse, ApiContract, BenchmarkCase, ProviderConfig, RawTraceMode, SuiteDefinition
-from agentblaster.runner import BenchmarkRunner, SmokeRunner, evaluate_case_assertions, normalize_usage
+from agentblaster.runner import BenchmarkRunner, SmokeRunner, evaluate_case_assertions, normalize_timings, normalize_usage
 
 
 class FakeAdapter:
@@ -43,6 +43,26 @@ def test_normalize_anthropic_usage_includes_cache_tokens() -> None:
     ) == (10, 4, 37)
 
 
+def test_normalize_native_ollama_usage_and_timings() -> None:
+    raw = {
+        "prompt_eval_count": 10,
+        "prompt_eval_duration": 100_000_000,
+        "eval_count": 5,
+        "eval_duration": 50_000_000,
+        "load_duration": 25_000_000,
+    }
+
+    input_tokens, output_tokens, total_tokens = normalize_usage(ApiContract.NATIVE, raw)
+    timings = normalize_timings(ApiContract.NATIVE, raw, input_tokens=input_tokens, output_tokens=output_tokens)
+
+    assert (input_tokens, output_tokens, total_tokens) == (10, 5, 15)
+    assert timings["load_ms"] == 25.0
+    assert timings["prompt_eval_ms"] == 100.0
+    assert timings["decode_ms"] == 50.0
+    assert timings["tokens_per_second_prefill"] == 100.0
+    assert timings["tokens_per_second_decode"] == 100.0
+
+
 def test_smoke_runner_writes_manifest_result_and_redacted_raw(tmp_path) -> None:
     provider = ProviderConfig(
         name="openai-like",
@@ -79,6 +99,42 @@ def test_smoke_runner_writes_manifest_result_and_redacted_raw(tmp_path) -> None:
 
     raw_payload = json.loads((run_dir / result.raw_response_path).read_text())
     assert raw_payload["headers"]["Authorization"] == "[REDACTED]"
+
+
+def test_runner_writes_native_timing_fields(tmp_path) -> None:
+    provider = ProviderConfig(
+        name="ollama-native",
+        contract=ApiContract.NATIVE,
+        base_url="http://example.com",
+        native_adapter="ollama",
+    )
+    response = AdapterResponse(
+        provider="ollama-native",
+        contract=ApiContract.NATIVE,
+        status_code=200,
+        latency_ms=12.0,
+        text="agentblaster-ok",
+        raw={
+            "message": {"content": "agentblaster-ok"},
+            "prompt_eval_count": 10,
+            "prompt_eval_duration": 100_000_000,
+            "eval_count": 5,
+            "eval_duration": 50_000_000,
+            "load_duration": 25_000_000,
+        },
+    )
+
+    result = SmokeRunner(
+        provider,
+        adapter=FakeAdapter(response),  # type: ignore[arg-type]
+        output_dir=tmp_path,
+        raw_trace_mode=RawTraceMode.OFF,
+    ).run(model="qwen-test")
+
+    assert result.input_tokens == 10
+    assert result.output_tokens == 5
+    assert result.load_ms == 25.0
+    assert result.tokens_per_second_decode == 100.0
 
 
 def test_smoke_runner_can_disable_raw_traces(tmp_path) -> None:

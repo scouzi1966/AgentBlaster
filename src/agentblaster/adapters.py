@@ -204,11 +204,92 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
         )
 
 
+class OllamaNativeAdapter(ProviderAdapter):
+    """Adapter for Ollama's native `/api/*` contract."""
+
+    def _auth_headers(self, api_key: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {api_key}"}
+
+    def probe(self) -> ProbeResult:
+        url = str(self.provider.base_url).rstrip("/") + "/api/tags"
+        try:
+            response = self.client.get(url, headers=self._headers())
+        except httpx.HTTPError as exc:
+            raise AdapterError(f"Ollama native probe failed for {self.provider.name}: {exc}") from exc
+
+        models: list[str] = []
+        raw: dict[str, Any] = {}
+        if response.headers.get("content-type", "").startswith("application/json"):
+            raw = response.json()
+            data = raw.get("models", [])
+            if isinstance(data, list):
+                models = [
+                    str(item.get("name") or item.get("model"))
+                    for item in data
+                    if isinstance(item, Mapping) and (item.get("name") or item.get("model"))
+                ]
+
+        return ProbeResult(
+            provider=self.provider.name,
+            contract=ApiContract.NATIVE,
+            ok=response.is_success,
+            status_code=response.status_code,
+            message="ok" if response.is_success else response.text[:240],
+            models=models,
+            raw=raw,
+        )
+
+    def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
+        url = str(self.provider.base_url).rstrip("/") + "/api/chat"
+        messages = []
+        if case.system_prompt:
+            messages.append({"role": "system", "content": case.system_prompt})
+        messages.append({"role": "user", "content": case.prompt})
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": case.temperature,
+                "num_predict": case.max_tokens,
+            },
+        }
+        if case.tools:
+            payload["tools"] = case.tools
+        started = perf_counter()
+        try:
+            response = self.client.post(url, headers=self._headers(), json=payload)
+        except httpx.HTTPError as exc:
+            raise AdapterError(f"Ollama native chat request failed for {self.provider.name}: {exc}") from exc
+        latency_ms = (perf_counter() - started) * 1000
+
+        raw: dict[str, Any] = {}
+        if response.headers.get("content-type", "").startswith("application/json"):
+            raw = response.json()
+
+        message = raw.get("message", {})
+        text = ""
+        if isinstance(message, Mapping):
+            text = str(message.get("content") or "")
+
+        return AdapterResponse(
+            provider=self.provider.name,
+            contract=ApiContract.NATIVE,
+            status_code=response.status_code,
+            latency_ms=latency_ms,
+            raw=raw,
+            text=text,
+            tool_names=extract_ollama_tool_names(raw),
+        )
+
+
 def adapter_for(provider: ProviderConfig, *, secrets: SecretResolver | None = None) -> ProviderAdapter:
     if provider.contract is ApiContract.OPENAI:
         return OpenAICompatibleAdapter(provider, secrets=secrets)
     if provider.contract is ApiContract.ANTHROPIC:
         return AnthropicCompatibleAdapter(provider, secrets=secrets)
+    if provider.contract is ApiContract.NATIVE and provider.native_adapter == "ollama":
+        return OllamaNativeAdapter(provider, secrets=secrets)
     raise AdapterError(f"no generic adapter exists for native provider: {provider.name}")
 
 
@@ -243,6 +324,23 @@ def extract_anthropic_tool_names(raw: Mapping[str, Any]) -> list[str]:
     for block in content:
         if isinstance(block, Mapping) and block.get("type") == "tool_use" and block.get("name"):
             names.append(str(block["name"]))
+    return names
+
+
+def extract_ollama_tool_names(raw: Mapping[str, Any]) -> list[str]:
+    names: list[str] = []
+    message = raw.get("message", {})
+    if not isinstance(message, Mapping):
+        return names
+    tool_calls = message.get("tool_calls", [])
+    if not isinstance(tool_calls, list):
+        return names
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, Mapping):
+            continue
+        function = tool_call.get("function", {})
+        if isinstance(function, Mapping) and function.get("name"):
+            names.append(str(function["name"]))
     return names
 
 

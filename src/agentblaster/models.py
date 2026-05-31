@@ -38,6 +38,7 @@ class ProviderConfig(BaseModel):
     capabilities: dict[str, bool] = Field(default_factory=dict)
     rate_limits: dict[str, Any] = Field(default_factory=dict)
     cost_model: dict[str, Any] = Field(default_factory=dict)
+    native_adapter: str | None = None
     remote: bool = False
 
     @field_validator("headers")
@@ -134,6 +135,11 @@ class BenchmarkResult(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    load_ms: float | None = None
+    prompt_eval_ms: float | None = None
+    decode_ms: float | None = None
+    tokens_per_second_prefill: float | None = None
+    tokens_per_second_decode: float | None = None
     failure_class: str | None = None
     message: str = ""
     raw_response_path: str | None = None
