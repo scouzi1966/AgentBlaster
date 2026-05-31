@@ -8,6 +8,7 @@ import typer
 
 from agentblaster.adapters import adapter_for
 from agentblaster.audit import AuditLogger
+from agentblaster.cleanup import cleanup_run
 from agentblaster.compare import compare_runs, format_comparison_table, write_comparison_json
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
@@ -241,6 +242,23 @@ def compare(
     typer.echo(format_comparison_table(rows))
     if output_json is not None:
         typer.echo(str(write_comparison_json(run_dirs, output_json)))
+
+
+@app.command()
+def cleanup(
+    run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
+    raw: Annotated[bool, typer.Option(help="Delete raw trace artifacts.")] = True,
+    reports: Annotated[bool, typer.Option(help="Delete generated report artifacts.")] = False,
+    exports: Annotated[bool, typer.Option(help="Delete exported result artifacts.")] = False,
+    all_artifacts: Annotated[bool, typer.Option(help="Delete the entire run directory.")] = False,
+) -> None:
+    """Clean up generated run artifacts according to retention needs."""
+    try:
+        removed = cleanup_run(run_dir, raw=raw, reports=reports, exports=exports, all_artifacts=all_artifacts)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    for path in removed:
+        typer.echo(str(path))
 
 
 @engines_app.command("list")

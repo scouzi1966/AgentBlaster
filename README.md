@@ -38,6 +38,7 @@ agentblaster run --matrix examples/matrices/local-smoke.yaml --offline
 agentblaster report runs/<run-id> --format html,json
 agentblaster export runs/<run-id> --format jsonl,csv
 agentblaster compare runs/<run-a> runs/<run-b> --output-json reports/comparison.json
+agentblaster cleanup runs/<run-id> --raw --reports --exports
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --offline
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --policy agentblaster.policy.yaml
 ```

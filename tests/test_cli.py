@@ -440,5 +440,10 @@ def test_cli_report_generates_html_json_and_audit(monkeypatch, tmp_path) -> None
         compare_result = runner.invoke(app, ["compare", str(run_dir), str(run_dir)])
         assert compare_result.exit_code == 0, compare_result.output
         assert "avg_latency_ms" in compare_result.output
+
+        cleanup_result = runner.invoke(app, ["cleanup", str(run_dir), "--raw", "--reports", "--exports"])
+        assert cleanup_result.exit_code == 0, cleanup_result.output
+        assert not (run_dir / "exports").exists()
+        assert not (run_dir / "summary.json").exists()
     finally:
         server.shutdown()
