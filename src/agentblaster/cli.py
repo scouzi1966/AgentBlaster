@@ -12,6 +12,7 @@ from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
 from agentblaster.models import ApiContract, ProviderConfig, RawTraceMode, SecretRef
 from agentblaster.policy import enforce_provider_policy, load_policy, offline_policy
+from agentblaster.presets import LOCAL_ENGINE_PRESETS, get_preset
 from agentblaster.reports import generate_reports
 from agentblaster.runner import BenchmarkRunner
 from agentblaster.secrets import SecretResolver
@@ -174,6 +175,25 @@ def add_provider(
         api_key_ref=api_key_ref,
         remote=remote,
     )
+    ProviderStore().upsert(provider)
+    typer.echo(f"saved provider {provider.name}")
+
+
+@providers_app.command("presets")
+def list_provider_presets() -> None:
+    """List built-in provider presets for common local engines."""
+    for preset in LOCAL_ENGINE_PRESETS.values():
+        typer.echo(f"{preset.name}\t{preset.contract.value}\t{preset.base_url}\t{preset.description}")
+
+
+@providers_app.command("add-preset")
+def add_provider_preset(
+    preset: Annotated[str, typer.Option(help="Built-in preset name.")],
+    name: Annotated[str | None, typer.Option(help="Provider profile name override.")] = None,
+    base_url: Annotated[str | None, typer.Option(help="Base URL override.")] = None,
+) -> None:
+    """Add or update a provider from a built-in local-engine preset."""
+    provider = get_preset(preset).to_provider(name=name, base_url=base_url)
     ProviderStore().upsert(provider)
     typer.echo(f"saved provider {provider.name}")
 

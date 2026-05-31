@@ -38,6 +38,22 @@ def test_cli_adds_and_lists_provider(monkeypatch, tmp_path) -> None:
     assert "secret=env:OPENAI_API_KEY" in list_result.output
 
 
+def test_cli_adds_provider_from_preset(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("AGENTBLASTER_HOME", str(tmp_path))
+    runner = CliRunner()
+
+    presets_result = runner.invoke(app, ["providers", "presets"])
+    assert presets_result.exit_code == 0, presets_result.output
+    assert "afm\topenai\thttp://127.0.0.1:9999/v1" in presets_result.output
+
+    add_result = runner.invoke(app, ["providers", "add-preset", "--preset", "afm"])
+    assert add_result.exit_code == 0, add_result.output
+
+    list_result = runner.invoke(app, ["providers", "list"])
+    assert list_result.exit_code == 0, list_result.output
+    assert "afm\topenai\thttp://127.0.0.1:9999/v1" in list_result.output
+
+
 def test_cli_auth_test_resolves_env_secret(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AGENTBLASTER_HOME", str(tmp_path))
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
