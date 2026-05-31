@@ -8,6 +8,7 @@ import typer
 
 from agentblaster.adapters import adapter_for
 from agentblaster.audit import AuditLogger
+from agentblaster.compare import compare_runs, format_comparison_table, write_comparison_json
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
 from agentblaster.exports import export_results
@@ -228,6 +229,18 @@ def export(
         raise typer.BadParameter(str(exc)) from exc
     for path in paths:
         typer.echo(str(path))
+
+
+@app.command()
+def compare(
+    run_dirs: Annotated[list[Path], typer.Argument(help="Two or more run artifact directories.")],
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON comparison output path.")] = None,
+) -> None:
+    """Compare completed run directories."""
+    rows = compare_runs(run_dirs)
+    typer.echo(format_comparison_table(rows))
+    if output_json is not None:
+        typer.echo(str(write_comparison_json(run_dirs, output_json)))
 
 
 @engines_app.command("list")
