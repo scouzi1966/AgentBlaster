@@ -404,6 +404,40 @@ Remote-provider benchmark rules:
 - Rate-limit errors must be classified separately from model or engine failures.
 - Remote cloud results must not be used as AFM-vs-local rankings unless explicitly selected.
 
+### Application Quality And SDLC Test Harness
+
+AgentBlaster must include a testing harness for AgentBlaster itself. This is separate from the benchmark suites that AgentBlaster runs against inference engines.
+
+The internal test harness must support a normal professional SDLC:
+
+- Unit tests for schemas, adapters, normalizers, policy checks, redaction, scoring, and report generation.
+- Contract tests for OpenAI-compatible, Anthropic-compatible, and engine-native response parsing.
+- Adapter tests with mocked providers, recorded fixtures, malformed responses, streaming deltas, timeouts, rate limits, and retry behavior.
+- Integration tests for local provider profiles, run orchestration, storage, artifact writing, and report generation.
+- End-to-end CLI tests for provider setup, secret references, benchmark execution, comparison, export, and cleanup.
+- GUI end-to-end tests for dashboard setup, run launch, live monitoring, trace inspection, report export, and redaction controls.
+- Security tests for secret redaction, raw trace modes, policy enforcement, dashboard binding, TLS settings, host-tool opt-in, and network allowlists.
+- Regression tests with stable fixture runs for canonical smoke, tool-call, structured-output, cache, and concurrency scenarios.
+- Cross-platform tests for macOS, Linux, and Windows behavior where feasible.
+- Packaging tests for source distributions, wheels, optional extras, CLI entrypoints, and clean installs.
+- Release validation that produces a reproducible test report for every tagged release.
+
+Testing principles:
+
+- The internal app tests must run without requiring paid API calls by default.
+- Remote-provider tests must be opt-in and skipped unless credentials are configured.
+- Security and redaction tests must run in CI.
+- GUI tests must use deterministic seeded data and temporary run directories.
+- Benchmark result correctness tests must distinguish app bugs from intentionally failed benchmark cases.
+- Slow, hardware-specific, or paid-provider tests must be clearly tagged.
+
+Browser and GUI testing:
+
+- Use Playwright or an equivalent browser automation tool for repeatable CI GUI tests.
+- Leverage the Codex Chrome plugin for interactive GUI validation, authenticated/profile-dependent browser scenarios, and exploratory checks where the user's Chrome profile or extensions matter.
+- Chrome-plugin validation should complement CI automation, not replace deterministic CI tests.
+- GUI screenshots and exported reports produced during tests must use redacted fixture data.
+
 ### Test Case Format
 
 Use declarative YAML or JSON with Pydantic validation:
@@ -662,6 +696,7 @@ Python is the right default because the suite needs broad platform support, easy
 - `normalizer`: raw response to canonical metrics.
 - `secrets`: API key storage and lookup through OS credential stores, environment variables, and explicit CI configuration.
 - `providers`: persisted provider profiles for local and remote endpoints.
+- `quality`: AgentBlaster's own SDLC test harness, fixture providers, regression runs, and release validation helpers.
 - `assertions`: deterministic and LLM-judge assertions.
 - `workloads`: YAML/JSON test cases and trace templates.
 - `collectors`: process, OS, Prometheus, and native engine telemetry.
@@ -678,6 +713,7 @@ agentbench/
   collectors/
   contracts/
   providers/
+  quality/
   runner/
   secrets/
   reporting/
@@ -887,6 +923,8 @@ Policy violations must fail closed with a clear error and an audit event.
 - Secret redaction for logs, traces, and reports.
 - `--no-raw-traces` run mode.
 - Localhost-only dashboard default if dashboard is enabled.
+- Internal unit, contract, and CLI test harness for AgentBlaster itself.
+- Mock provider fixtures for OpenAI-compatible and Anthropic-compatible contracts.
 
 ### MVP Should Have
 
@@ -901,6 +939,8 @@ Policy violations must fail closed with a clear error and an audit event.
 - DuckDB/Parquet export.
 - `agentblaster.policy.yaml` enforcement for provider allowlists, raw trace mode, dashboard binding, and host-tool execution.
 - Structured security audit log.
+- GUI E2E test harness using deterministic fixtures.
+- Chrome/Codex plugin validation checklist for dashboard flows that benefit from the user's real Chrome profile.
 
 ### MVP Could Have
 
@@ -912,6 +952,7 @@ Policy violations must fail closed with a clear error and an audit event.
 - Provider cost estimation for remote API runs.
 - SBOM generation and dependency vulnerability scan target.
 - Harness Engineering Lab for experimental trace replay, judge calibration, contract fuzzing, and synthetic workload generation.
+- Full release qualification report generated from CI test artifacts.
 
 ## Phase Plan
 
@@ -921,11 +962,13 @@ Policy violations must fail closed with a clear error and an audit event.
 - Implement basic OpenAI-compatible adapter.
 - Run AFM vs mlx-lm on smoke and prefill cases.
 - Produce a minimal HTML report.
+- Add the initial AgentBlaster app test harness for schemas, normalizers, adapters, redaction, and CLI smoke tests.
 
 Exit criteria:
 
 - One command runs a small matrix and writes reproducible artifacts.
 - Raw and normalized metrics are both visible.
+- App self-tests run locally without remote credentials.
 
 ### Phase 1: MVP CLI Benchmark
 
@@ -934,6 +977,7 @@ Exit criteria:
 - Add failure classification.
 - Add report builder.
 - Add baseline enterprise controls: secret redaction, no-raw-traces mode, local-only mode, provider allowlists, and localhost-only dashboard defaults.
+- Add CI for unit, contract, integration, CLI, security, packaging, and cross-platform smoke tests.
 
 Exit criteria:
 
@@ -962,6 +1006,7 @@ Exit criteria:
 - Add PDF report export.
 - Add static report bundles.
 - Add dashboard authentication options, redacted report downloads, and security posture indicators.
+- Add GUI E2E automation and a Codex Chrome plugin validation workflow for profile-dependent dashboard checks.
 
 Exit criteria:
 
@@ -1000,6 +1045,7 @@ Exit criteria:
 - The benchmark catches prefill/cache regressions that simple tokens/sec tests miss.
 - The benchmark catches malformed streaming/tool-call regressions.
 - The benchmark improves its own harness quality by tracking experimental eval methods separately from stable engine/model scores.
+- AgentBlaster's own CI catches adapter, normalization, policy, redaction, report, packaging, and GUI regressions before release.
 - The suite can generate a credible public report in under 10 minutes after a run completes.
 - New engine adapters can be added without changing core runner code.
 
