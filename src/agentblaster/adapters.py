@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from time import perf_counter
 from typing import Any
 
 import httpx
 
 from agentblaster.errors import AdapterError
-from agentblaster.models import ApiContract, ProbeResult, ProviderConfig
+from agentblaster.models import AdapterResponse, ApiContract, ProbeResult, ProviderConfig
 from agentblaster.secrets import SecretResolver
 
 
@@ -24,6 +25,9 @@ class ProviderAdapter:
         self.client = client or httpx.Client(timeout=timeout)
 
     def probe(self) -> ProbeResult:
+        raise NotImplementedError
+
+    def smoke_chat(self, model: str) -> AdapterResponse:
         raise NotImplementedError
 
     def _headers(self) -> dict[str, str]:
@@ -66,6 +70,41 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             raw=raw,
         )
 
+    def smoke_chat(self, model: str) -> AdapterResponse:
+        url = str(self.provider.base_url).rstrip("/") + "/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "Reply with exactly: agentblaster-ok"}],
+            "temperature": 0,
+            "max_tokens": 16,
+        }
+        started = perf_counter()
+        try:
+            response = self.client.post(url, headers=self._headers(), json=payload)
+        except httpx.HTTPError as exc:
+            raise AdapterError(f"OpenAI smoke request failed for {self.provider.name}: {exc}") from exc
+        latency_ms = (perf_counter() - started) * 1000
+
+        raw: dict[str, Any] = {}
+        if response.headers.get("content-type", "").startswith("application/json"):
+            raw = response.json()
+
+        text = ""
+        choices = raw.get("choices", [])
+        if choices and isinstance(choices[0], Mapping):
+            message = choices[0].get("message", {})
+            if isinstance(message, Mapping):
+                text = str(message.get("content") or "")
+
+        return AdapterResponse(
+            provider=self.provider.name,
+            contract=ApiContract.OPENAI,
+            status_code=response.status_code,
+            latency_ms=latency_ms,
+            raw=raw,
+            text=text,
+        )
+
 
 class AnthropicCompatibleAdapter(ProviderAdapter):
     def _auth_headers(self, api_key: str) -> dict[str, str]:
@@ -97,6 +136,41 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             message="ok" if response.is_success else response.text[:240],
             models=models,
             raw=raw,
+        )
+
+    def smoke_chat(self, model: str) -> AdapterResponse:
+        url = str(self.provider.base_url).rstrip("/") + "/messages"
+        payload = {
+            "model": model,
+            "max_tokens": 16,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": "Reply with exactly: agentblaster-ok"}],
+        }
+        started = perf_counter()
+        try:
+            response = self.client.post(url, headers=self._headers(), json=payload)
+        except httpx.HTTPError as exc:
+            raise AdapterError(f"Anthropic smoke request failed for {self.provider.name}: {exc}") from exc
+        latency_ms = (perf_counter() - started) * 1000
+
+        raw: dict[str, Any] = {}
+        if response.headers.get("content-type", "").startswith("application/json"):
+            raw = response.json()
+
+        text_parts: list[str] = []
+        content = raw.get("content", [])
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, Mapping) and block.get("type") == "text":
+                    text_parts.append(str(block.get("text") or ""))
+
+        return AdapterResponse(
+            provider=self.provider.name,
+            contract=ApiContract.ANTHROPIC,
+            status_code=response.status_code,
+            latency_ms=latency_ms,
+            raw=raw,
+            text="".join(text_parts),
         )
 
 

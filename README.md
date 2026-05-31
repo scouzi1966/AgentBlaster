@@ -25,6 +25,7 @@ agentblaster providers add --name openai --contract openai --base-url https://ap
 agentblaster providers list
 agentblaster providers auth test --provider openai
 agentblaster providers probe openai
+agentblaster run --suite smoke --engine openai --model gpt-4.1-mini --no-raw-traces
 ```
 
 Provider profiles are stored locally without raw API keys. API keys can be referenced through environment variables today; optional OS keyring support is defined for persistent secret entry.
@@ -32,6 +33,5 @@ Provider profiles are stored locally without raw API keys. API keys can be refer
 ## Planned Benchmark CLI
 
 ```bash
-agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B
 agentblaster report runs/<run-id> --format html
 ```

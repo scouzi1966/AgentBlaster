@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -8,7 +9,8 @@ import typer
 from agentblaster.adapters import adapter_for
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
-from agentblaster.models import ApiContract, ProviderConfig, SecretRef
+from agentblaster.models import ApiContract, ProviderConfig, RawTraceMode, SecretRef
+from agentblaster.runner import SmokeRunner
 from agentblaster.secrets import SecretResolver
 
 app = typer.Typer(help="AgentBlaster local agentic benchmark suite.")
@@ -28,6 +30,39 @@ def version() -> None:
     from agentblaster import __version__
 
     typer.echo(__version__)
+
+
+@app.command()
+def run(
+    suite: Annotated[str, typer.Option(help="Benchmark suite to run. Currently: smoke.")],
+    engine: Annotated[str, typer.Option(help="Configured provider/engine profile name.")],
+    model: Annotated[str | None, typer.Option(help="Model id. Required unless provider has a default model.")] = None,
+    output_dir: Annotated[Path, typer.Option(help="Directory where run artifacts are written.")] = Path("runs"),
+    raw_traces: Annotated[
+        RawTraceMode,
+        typer.Option(help="Raw response capture mode."),
+    ] = RawTraceMode.REDACTED,
+    no_raw_traces: Annotated[bool, typer.Option(help="Disable raw response capture.")] = False,
+) -> None:
+    """Run a benchmark suite against a configured provider."""
+    if suite != "smoke":
+        raise typer.BadParameter("only the smoke suite is implemented in this slice")
+
+    provider = ProviderStore().get(engine)
+    trace_mode = RawTraceMode.OFF if no_raw_traces else raw_traces
+    try:
+        result = SmokeRunner(provider, output_dir=output_dir, raw_trace_mode=trace_mode).run(model=model)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"run_id: {result.run_id}")
+    typer.echo(f"case_id: {result.case_id}")
+    typer.echo(f"ok: {str(result.ok).lower()}")
+    typer.echo(f"latency_ms: {result.latency_ms}")
+    if result.raw_response_path:
+        typer.echo(f"raw_response_path: {result.raw_response_path}")
 
 
 @engines_app.command("list")
