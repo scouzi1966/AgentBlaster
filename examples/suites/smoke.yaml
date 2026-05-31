@@ -1,0 +1,12 @@
+name: smoke-example
+description: Example one-case OpenAI/Anthropic-compatible smoke suite.
+cases:
+  - id: protocol-smoke-chat
+    title: Chat completion returns expected text
+    prompt: "Reply with exactly: agentblaster-ok"
+    expected_substring: agentblaster-ok
+    max_tokens: 16
+    temperature: 0
+    tags:
+      - protocol
+      - chat

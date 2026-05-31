@@ -20,6 +20,7 @@ This repository is freshly scaffolded from the initial PRD. The product requirem
 ```bash
 agentblaster version
 agentblaster suites
+agentblaster validate-case examples/suites/smoke.yaml
 agentblaster engines list
 agentblaster engines probe --engine afm --base-url http://127.0.0.1:9999/v1
 agentblaster providers add --name openai --contract openai --base-url https://api.openai.com/v1 --api-key-env OPENAI_API_KEY --remote
@@ -27,6 +28,7 @@ agentblaster providers list
 agentblaster providers auth test --provider openai
 agentblaster providers probe openai
 agentblaster run --suite smoke --engine openai --model gpt-4.1-mini --no-raw-traces --audit-log runs/audit.jsonl
+agentblaster run --suite-file examples/suites/smoke.yaml --engine openai --model gpt-4.1-mini --no-raw-traces
 agentblaster report runs/<run-id> --format html,json
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --offline
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --policy agentblaster.policy.yaml

@@ -15,7 +15,7 @@ from agentblaster.policy import enforce_provider_policy, load_policy, offline_po
 from agentblaster.reports import generate_reports
 from agentblaster.runner import BenchmarkRunner
 from agentblaster.secrets import SecretResolver
-from agentblaster.suites import BUILTIN_SUITES, get_builtin_suite
+from agentblaster.suites import BUILTIN_SUITES, get_builtin_suite, load_suite_file, validate_case_or_suite_file
 
 app = typer.Typer(help="AgentBlaster local agentic benchmark suite.")
 engines_app = typer.Typer(help="Inspect and configure benchmark engines.")
@@ -38,9 +38,10 @@ def version() -> None:
 
 @app.command()
 def run(
-    suite: Annotated[str, typer.Option(help="Benchmark suite to run.")],
     engine: Annotated[str, typer.Option(help="Configured provider/engine profile name.")],
     model: Annotated[str | None, typer.Option(help="Model id. Required unless provider has a default model.")] = None,
+    suite: Annotated[str, typer.Option(help="Built-in benchmark suite to run.")] = "smoke",
+    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to run.")] = None,
     output_dir: Annotated[Path, typer.Option(help="Directory where run artifacts are written.")] = Path("runs"),
     policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
@@ -53,7 +54,7 @@ def run(
 ) -> None:
     """Run a benchmark suite against a configured provider."""
     provider = ProviderStore().get(engine)
-    suite_definition = get_builtin_suite(suite)
+    suite_definition = load_suite_file(suite_file) if suite_file else get_builtin_suite(suite)
     trace_mode = RawTraceMode.OFF if no_raw_traces else raw_traces
     security_policy = offline_policy() if offline else load_policy(policy)
     audit = AuditLogger(audit_log)
@@ -108,6 +109,15 @@ def list_suites() -> None:
     """List built-in benchmark suites."""
     for suite in BUILTIN_SUITES.values():
         typer.echo(f"{suite.name}\t{len(suite.cases)} case(s)\t{suite.description}")
+
+
+@app.command("validate-case")
+def validate_case(path: Annotated[Path, typer.Argument(help="YAML benchmark case or suite file.")]) -> None:
+    """Validate a YAML benchmark case or suite file."""
+    try:
+        typer.echo(validate_case_or_suite_file(path))
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command()
