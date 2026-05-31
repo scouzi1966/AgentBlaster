@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 from agentblaster.errors import AdapterError
-from agentblaster.models import AdapterResponse, ApiContract, ProbeResult, ProviderConfig
+from agentblaster.models import AdapterResponse, ApiContract, BenchmarkCase, ProbeResult, ProviderConfig
 from agentblaster.secrets import SecretResolver
 
 
@@ -28,6 +28,16 @@ class ProviderAdapter:
         raise NotImplementedError
 
     def smoke_chat(self, model: str) -> AdapterResponse:
+        case = BenchmarkCase(
+            id="protocol-smoke-chat",
+            title="Protocol smoke chat",
+            prompt="Reply with exactly: agentblaster-ok",
+            expected_substring="agentblaster-ok",
+            max_tokens=16,
+        )
+        return self.chat_completion(model, case)
+
+    def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
         raise NotImplementedError
 
     def _headers(self) -> dict[str, str]:
@@ -70,13 +80,13 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             raw=raw,
         )
 
-    def smoke_chat(self, model: str) -> AdapterResponse:
+    def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
         url = str(self.provider.base_url).rstrip("/") + "/chat/completions"
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": "Reply with exactly: agentblaster-ok"}],
-            "temperature": 0,
-            "max_tokens": 16,
+            "messages": [{"role": "user", "content": case.prompt}],
+            "temperature": case.temperature,
+            "max_tokens": case.max_tokens,
         }
         started = perf_counter()
         try:
@@ -138,13 +148,13 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             raw=raw,
         )
 
-    def smoke_chat(self, model: str) -> AdapterResponse:
+    def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
         url = str(self.provider.base_url).rstrip("/") + "/messages"
         payload = {
             "model": model,
-            "max_tokens": 16,
-            "temperature": 0,
-            "messages": [{"role": "user", "content": "Reply with exactly: agentblaster-ok"}],
+            "max_tokens": case.max_tokens,
+            "temperature": case.temperature,
+            "messages": [{"role": "user", "content": case.prompt}],
         }
         started = perf_counter()
         try:

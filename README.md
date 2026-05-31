@@ -19,20 +19,22 @@ This repository is freshly scaffolded from the initial PRD. The product requirem
 
 ```bash
 agentblaster version
+agentblaster suites
 agentblaster engines list
 agentblaster engines probe --engine afm --base-url http://127.0.0.1:9999/v1
 agentblaster providers add --name openai --contract openai --base-url https://api.openai.com/v1 --api-key-env OPENAI_API_KEY --remote
 agentblaster providers list
 agentblaster providers auth test --provider openai
 agentblaster providers probe openai
-agentblaster run --suite smoke --engine openai --model gpt-4.1-mini --no-raw-traces
+agentblaster run --suite smoke --engine openai --model gpt-4.1-mini --no-raw-traces --audit-log runs/audit.jsonl
+agentblaster report runs/<run-id> --format html,json
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --offline
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --policy agentblaster.policy.yaml
 ```
 
 Provider profiles are stored locally without raw API keys. API keys can be referenced through environment variables today; optional OS keyring support is defined for persistent secret entry.
 
-Run execution already includes the first enterprise controls: raw traces can be disabled, remote providers can be blocked with `--offline`, and YAML policy files can allowlist providers and endpoint hosts.
+Run execution already includes the first enterprise controls: raw traces can be disabled, remote providers can be blocked with `--offline`, YAML policy files can allowlist providers and endpoint hosts, and optional JSONL audit logs record run and policy events.
 
 ## Planned Benchmark CLI
 

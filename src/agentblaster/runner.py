@@ -9,10 +9,13 @@ from agentblaster.adapters import ProviderAdapter, adapter_for
 from agentblaster.models import (
     AdapterResponse,
     ApiContract,
+    BenchmarkCase,
     BenchmarkResult,
     ProviderConfig,
     RawTraceMode,
     RunManifest,
+    RunSummary,
+    SuiteDefinition,
 )
 from agentblaster.redaction import redact_value
 
@@ -50,6 +53,78 @@ class ArtifactWriter:
         with (self.run_dir / "results.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(result.model_dump_json(exclude_none=True) + "\n")
 
+    def write_summary(self, summary: RunSummary) -> None:
+        (self.run_dir / "summary.json").write_text(
+            json.dumps(summary.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+
+class BenchmarkRunner:
+    def __init__(
+        self,
+        provider: ProviderConfig,
+        suite: SuiteDefinition,
+        *,
+        adapter: ProviderAdapter | None = None,
+        output_dir: Path = Path("runs"),
+        raw_trace_mode: RawTraceMode = RawTraceMode.REDACTED,
+    ) -> None:
+        self.provider = provider
+        self.suite = suite
+        self.adapter = adapter or adapter_for(provider)
+        self.output_dir = output_dir
+        self.raw_trace_mode = raw_trace_mode
+
+    def run(self, model: str | None = None) -> RunSummary:
+        resolved_model = model or self.provider.default_model
+        if not resolved_model:
+            raise ValueError("model is required when provider has no default_model")
+
+        run_id = new_run_id()
+        manifest = RunManifest(
+            run_id=run_id,
+            suite=self.suite.name,
+            provider=self.provider.name,
+            contract=self.provider.contract,
+            model=resolved_model,
+            raw_trace_mode=self.raw_trace_mode,
+            created_at=datetime.now(UTC).isoformat(),
+            case_count=len(self.suite.cases),
+        )
+        writer = ArtifactWriter(self.output_dir, manifest)
+        writer.initialize()
+
+        results: list[BenchmarkResult] = []
+        for case in self.suite.cases:
+            response = self.adapter.chat_completion(resolved_model, case)
+            raw_response_path = writer.write_raw_response(case.id, response.raw, self.raw_trace_mode)
+            result = result_from_response(
+                run_id=run_id,
+                suite=self.suite.name,
+                provider_name=self.provider.name,
+                model=resolved_model,
+                case=case,
+                response=response,
+                raw_response_path=raw_response_path,
+            )
+            writer.append_result(result)
+            results.append(result)
+
+        summary = RunSummary(
+            run_id=run_id,
+            suite=self.suite.name,
+            provider=self.provider.name,
+            model=resolved_model,
+            total_cases=len(results),
+            passed=sum(1 for result in results if result.ok),
+            failed=sum(1 for result in results if not result.ok),
+            results_path="results.jsonl",
+            manifest_path="manifest.json",
+        )
+        writer.write_summary(summary)
+        return summary
+
 
 class SmokeRunner:
     def __init__(
@@ -85,7 +160,22 @@ class SmokeRunner:
 
         response = self.adapter.smoke_chat(resolved_model)
         raw_response_path = writer.write_raw_response(SMOKE_CASE_ID, response.raw, self.raw_trace_mode)
-        result = self._result_from_response(run_id, resolved_model, response, raw_response_path)
+        case = BenchmarkCase(
+            id=SMOKE_CASE_ID,
+            title="Protocol smoke chat",
+            prompt="Reply with exactly: agentblaster-ok",
+            expected_substring="agentblaster-ok",
+            max_tokens=16,
+        )
+        result = result_from_response(
+            run_id=run_id,
+            suite="smoke",
+            provider_name=self.provider.name,
+            model=resolved_model,
+            case=case,
+            response=response,
+            raw_response_path=raw_response_path,
+        )
         writer.append_result(result)
         return result
 
@@ -96,28 +186,55 @@ class SmokeRunner:
         response: AdapterResponse,
         raw_response_path: str | None,
     ) -> BenchmarkResult:
-        input_tokens, output_tokens, total_tokens = normalize_usage(response.contract, response.raw)
-        expected_seen = "agentblaster-ok" in response.text.lower()
-        ok = 200 <= response.status_code < 300 and expected_seen
-        message = "ok" if ok else response.text[:240] or f"HTTP {response.status_code}"
-
-        return BenchmarkResult(
+        case = BenchmarkCase(
+            id=SMOKE_CASE_ID,
+            title="Protocol smoke chat",
+            prompt="Reply with exactly: agentblaster-ok",
+            expected_substring="agentblaster-ok",
+        )
+        return result_from_response(
             run_id=run_id,
-            case_id=SMOKE_CASE_ID,
             suite="smoke",
-            provider=self.provider.name,
-            contract=response.contract,
+            provider_name=self.provider.name,
             model=model,
-            ok=ok,
-            status_code=response.status_code,
-            latency_ms=round(response.latency_ms, 3),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            failure_class=None if ok else "model_quality",
-            message=message,
+            case=case,
+            response=response,
             raw_response_path=raw_response_path,
         )
+
+
+def result_from_response(
+    *,
+    run_id: str,
+    suite: str,
+    provider_name: str,
+    model: str,
+    case: BenchmarkCase,
+    response: AdapterResponse,
+    raw_response_path: str | None,
+) -> BenchmarkResult:
+    input_tokens, output_tokens, total_tokens = normalize_usage(response.contract, response.raw)
+    expected_seen = case.expected_substring.lower() in response.text.lower()
+    ok = 200 <= response.status_code < 300 and expected_seen
+    message = "ok" if ok else response.text[:240] or f"HTTP {response.status_code}"
+
+    return BenchmarkResult(
+        run_id=run_id,
+        case_id=case.id,
+        suite=suite,
+        provider=provider_name,
+        contract=response.contract,
+        model=model,
+        ok=ok,
+        status_code=response.status_code,
+        latency_ms=round(response.latency_ms, 3),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        failure_class=None if ok else "model_quality",
+        message=message,
+        raw_response_path=raw_response_path,
+    )
 
 
 def normalize_usage(contract: ApiContract, raw: dict) -> tuple[int | None, int | None, int | None]:

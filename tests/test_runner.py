@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from agentblaster.models import AdapterResponse, ApiContract, ProviderConfig, RawTraceMode
-from agentblaster.runner import SmokeRunner, normalize_usage
+from agentblaster.models import AdapterResponse, ApiContract, BenchmarkCase, ProviderConfig, RawTraceMode, SuiteDefinition
+from agentblaster.runner import BenchmarkRunner, SmokeRunner, normalize_usage
 
 
 class FakeAdapter:
@@ -11,6 +11,9 @@ class FakeAdapter:
         self.response = response
 
     def smoke_chat(self, model: str) -> AdapterResponse:
+        return self.response
+
+    def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
         return self.response
 
 
@@ -93,3 +96,39 @@ def test_smoke_runner_can_disable_raw_traces(tmp_path) -> None:
 
     assert result.raw_response_path is None
     assert not (tmp_path / result.run_id / "raw").exists()
+
+
+def test_benchmark_runner_writes_summary_for_suite(tmp_path) -> None:
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    suite = SuiteDefinition(
+        name="custom-smoke",
+        description="custom suite",
+        cases=[
+            BenchmarkCase(
+                id="case-one",
+                title="case one",
+                prompt="Reply with exactly: agentblaster-ok",
+                expected_substring="agentblaster-ok",
+            )
+        ],
+    )
+    response = AdapterResponse(
+        provider="openai-like",
+        contract=ApiContract.OPENAI,
+        status_code=200,
+        latency_ms=1.0,
+        text="agentblaster-ok",
+        raw={"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}},
+    )
+
+    summary = BenchmarkRunner(
+        provider,
+        suite,
+        adapter=FakeAdapter(response),  # type: ignore[arg-type]
+        output_dir=tmp_path,
+        raw_trace_mode=RawTraceMode.OFF,
+    ).run(model="qwen-test")
+
+    assert summary.total_cases == 1
+    assert summary.passed == 1
+    assert (tmp_path / summary.run_id / "summary.json").exists()

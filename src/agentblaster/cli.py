@@ -7,12 +7,15 @@ from typing import Annotated
 import typer
 
 from agentblaster.adapters import adapter_for
+from agentblaster.audit import AuditLogger
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
 from agentblaster.models import ApiContract, ProviderConfig, RawTraceMode, SecretRef
 from agentblaster.policy import enforce_provider_policy, load_policy, offline_policy
-from agentblaster.runner import SmokeRunner
+from agentblaster.reports import generate_reports
+from agentblaster.runner import BenchmarkRunner
 from agentblaster.secrets import SecretResolver
+from agentblaster.suites import BUILTIN_SUITES, get_builtin_suite
 
 app = typer.Typer(help="AgentBlaster local agentic benchmark suite.")
 engines_app = typer.Typer(help="Inspect and configure benchmark engines.")
@@ -35,11 +38,12 @@ def version() -> None:
 
 @app.command()
 def run(
-    suite: Annotated[str, typer.Option(help="Benchmark suite to run. Currently: smoke.")],
+    suite: Annotated[str, typer.Option(help="Benchmark suite to run.")],
     engine: Annotated[str, typer.Option(help="Configured provider/engine profile name.")],
     model: Annotated[str | None, typer.Option(help="Model id. Required unless provider has a default model.")] = None,
     output_dir: Annotated[Path, typer.Option(help="Directory where run artifacts are written.")] = Path("runs"),
     policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
     offline: Annotated[bool, typer.Option(help="Block providers marked as remote.")] = False,
     raw_traces: Annotated[
         RawTraceMode,
@@ -48,30 +52,76 @@ def run(
     no_raw_traces: Annotated[bool, typer.Option(help="Disable raw response capture.")] = False,
 ) -> None:
     """Run a benchmark suite against a configured provider."""
-    if suite != "smoke":
-        raise typer.BadParameter("only the smoke suite is implemented in this slice")
-
     provider = ProviderStore().get(engine)
+    suite_definition = get_builtin_suite(suite)
     trace_mode = RawTraceMode.OFF if no_raw_traces else raw_traces
     security_policy = offline_policy() if offline else load_policy(policy)
+    audit = AuditLogger(audit_log)
+    audit.emit(
+        "run_policy_evaluation",
+        provider=provider.name,
+        suite=suite,
+        model=model or provider.default_model,
+        raw_trace_mode=trace_mode.value,
+        offline=offline,
+        policy_path=str(policy) if policy else None,
+    )
     try:
         enforce_provider_policy(provider, security_policy, raw_trace_mode=trace_mode)
     except AgentBlasterError as exc:
+        audit.emit("policy_violation", provider=provider.name, reason=str(exc))
         raise typer.BadParameter(str(exc)) from exc
 
     try:
-        result = SmokeRunner(provider, output_dir=output_dir, raw_trace_mode=trace_mode).run(model=model)
+        audit.emit("run_started", provider=provider.name, suite=suite, remote=provider.remote)
+        summary = BenchmarkRunner(
+            provider,
+            suite_definition,
+            output_dir=output_dir,
+            raw_trace_mode=trace_mode,
+        ).run(model=model)
+        audit.emit(
+            "run_completed",
+            run_id=summary.run_id,
+            provider=summary.provider,
+            suite=summary.suite,
+            passed=summary.passed,
+            failed=summary.failed,
+        )
     except AgentBlasterError as exc:
         raise typer.BadParameter(str(exc)) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
-    typer.echo(f"run_id: {result.run_id}")
-    typer.echo(f"case_id: {result.case_id}")
-    typer.echo(f"ok: {str(result.ok).lower()}")
-    typer.echo(f"latency_ms: {result.latency_ms}")
-    if result.raw_response_path:
-        typer.echo(f"raw_response_path: {result.raw_response_path}")
+    typer.echo(f"run_id: {summary.run_id}")
+    typer.echo(f"suite: {summary.suite}")
+    typer.echo(f"provider: {summary.provider}")
+    typer.echo(f"model: {summary.model}")
+    typer.echo(f"total_cases: {summary.total_cases}")
+    typer.echo(f"passed: {summary.passed}")
+    typer.echo(f"failed: {summary.failed}")
+    typer.echo(f"ok: {str(summary.failed == 0).lower()}")
+
+
+@app.command("suites")
+def list_suites() -> None:
+    """List built-in benchmark suites."""
+    for suite in BUILTIN_SUITES.values():
+        typer.echo(f"{suite.name}\t{len(suite.cases)} case(s)\t{suite.description}")
+
+
+@app.command()
+def report(
+    run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
+    format: Annotated[str, typer.Option(help="Comma-separated formats: html,json.")] = "html,json",
+) -> None:
+    """Generate reports from a completed run directory."""
+    try:
+        paths = generate_reports(run_dir, [item.strip() for item in format.split(",")])
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    for path in paths:
+        typer.echo(str(path))
 
 
 @engines_app.command("list")

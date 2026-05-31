@@ -82,6 +82,30 @@ class AdapterResponse(BaseModel):
     text: str = ""
 
 
+class BenchmarkCase(BaseModel):
+    """Declarative benchmark case executed by a suite runner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_.-]+$")
+    title: str
+    prompt: str
+    expected_substring: str
+    max_tokens: int = Field(default=32, ge=1)
+    temperature: float = Field(default=0.0, ge=0.0)
+    tags: list[str] = Field(default_factory=list)
+
+
+class SuiteDefinition(BaseModel):
+    """Named benchmark suite consisting of one or more cases."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_.-]+$")
+    description: str
+    cases: list[BenchmarkCase] = Field(min_length=1)
+
+
 class RawTraceMode(str, Enum):
     OFF = "off"
     REDACTED = "redacted"
@@ -118,3 +142,18 @@ class RunManifest(BaseModel):
     model: str
     raw_trace_mode: RawTraceMode
     created_at: str
+    case_count: int = 0
+
+
+class RunSummary(BaseModel):
+    """Run-level aggregate summary."""
+
+    run_id: str
+    suite: str
+    provider: str
+    model: str
+    total_cases: int
+    passed: int
+    failed: int
+    results_path: str
+    manifest_path: str
