@@ -42,6 +42,18 @@ def test_policy_blocks_full_raw_traces_by_default() -> None:
         enforce_provider_policy(provider, SecurityPolicy(), raw_trace_mode=RawTraceMode.FULL)
 
 
+def test_policy_blocks_concurrency_above_limit() -> None:
+    provider = ProviderConfig(name="local", contract=ApiContract.OPENAI, base_url="http://127.0.0.1:9999/v1")
+
+    with pytest.raises(PolicyError, match="exceeds policy max_concurrency"):
+        enforce_provider_policy(
+            provider,
+            SecurityPolicy(max_concurrency=2),
+            raw_trace_mode=RawTraceMode.OFF,
+            concurrency=4,
+        )
+
+
 def test_load_policy_from_yaml(tmp_path) -> None:
     path = tmp_path / "agentblaster.policy.yaml"
     path.write_text(

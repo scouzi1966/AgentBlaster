@@ -47,6 +47,7 @@ def run(
     policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
     offline: Annotated[bool, typer.Option(help="Block providers marked as remote.")] = False,
+    concurrency: Annotated[int, typer.Option(help="Maximum concurrent benchmark cases.")] = 1,
     raw_traces: Annotated[
         RawTraceMode,
         typer.Option(help="Raw response capture mode."),
@@ -67,9 +68,10 @@ def run(
         raw_trace_mode=trace_mode.value,
         offline=offline,
         policy_path=str(policy) if policy else None,
+        concurrency=concurrency,
     )
     try:
-        enforce_provider_policy(provider, security_policy, raw_trace_mode=trace_mode)
+        enforce_provider_policy(provider, security_policy, raw_trace_mode=trace_mode, concurrency=concurrency)
     except AgentBlasterError as exc:
         audit.emit("policy_violation", provider=provider.name, reason=str(exc))
         raise typer.BadParameter(str(exc)) from exc
@@ -81,6 +83,7 @@ def run(
             suite_definition,
             output_dir=output_dir,
             raw_trace_mode=trace_mode,
+            concurrency=concurrency,
         ).run(model=model)
         audit.emit(
             "run_completed",
@@ -89,6 +92,7 @@ def run(
             suite=summary.suite,
             passed=summary.passed,
             failed=summary.failed,
+            concurrency=summary.concurrency,
         )
     except AgentBlasterError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -102,6 +106,7 @@ def run(
     typer.echo(f"total_cases: {summary.total_cases}")
     typer.echo(f"passed: {summary.passed}")
     typer.echo(f"failed: {summary.failed}")
+    typer.echo(f"concurrency: {summary.concurrency}")
     typer.echo(f"ok: {str(summary.failed == 0).lower()}")
 
 

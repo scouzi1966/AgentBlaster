@@ -37,6 +37,7 @@ def summarize_run(run_dir: Path) -> RunSummary:
         total_cases=len(results),
         passed=sum(1 for result in results if result.ok),
         failed=sum(1 for result in results if not result.ok),
+        concurrency=manifest.concurrency,
         results_path="results.jsonl",
         manifest_path="manifest.json",
     )
@@ -84,6 +85,7 @@ def write_html_report(run_dir: Path) -> Path:
       Model: {html.escape(summary.model)}<br>
       Contract: {html.escape(manifest.contract.value)}<br>
       Raw traces: {html.escape(manifest.raw_trace_mode.value)}<br>
+      Concurrency: {manifest.concurrency}<br>
       Created: {html.escape(manifest.created_at)}
     </div>
   </header>

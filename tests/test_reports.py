@@ -40,4 +40,5 @@ def test_generate_reports_writes_html_and_json(tmp_path) -> None:
     assert "AgentBlaster Benchmark Report" in (run_dir / "report.html").read_text(encoding="utf-8")
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["passed"] == 1
+    assert summary["concurrency"] == 1
     assert summarize_run(run_dir).failed == 0

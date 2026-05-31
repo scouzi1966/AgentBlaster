@@ -38,6 +38,7 @@ def enforce_provider_policy(
     policy: SecurityPolicy,
     *,
     raw_trace_mode: RawTraceMode,
+    concurrency: int = 1,
 ) -> None:
     if policy.allowed_providers is not None and provider.name not in policy.allowed_providers:
         raise PolicyError(f"provider is not allowed by policy: {provider.name}")
@@ -51,6 +52,9 @@ def enforce_provider_policy(
 
     if raw_trace_mode is RawTraceMode.FULL and not policy.allow_full_raw_traces:
         raise PolicyError("full raw traces are disabled by policy")
+
+    if policy.max_concurrency is not None and concurrency > policy.max_concurrency:
+        raise PolicyError(f"concurrency {concurrency} exceeds policy max_concurrency {policy.max_concurrency}")
 
 
 def offline_policy() -> SecurityPolicy:

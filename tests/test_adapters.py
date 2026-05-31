@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import httpx
 
-from agentblaster.adapters import AnthropicCompatibleAdapter, OpenAICompatibleAdapter
-from agentblaster.models import ApiContract, ProviderConfig, SecretRef
+from agentblaster.adapters import AnthropicCompatibleAdapter, OpenAICompatibleAdapter, extract_openai_tool_names
+from agentblaster.models import ApiContract, BenchmarkCase, ProviderConfig, SecretRef
 from agentblaster.secrets import EnvironmentSecretStore, SecretResolver
 
 
@@ -74,6 +74,58 @@ def test_openai_smoke_chat_posts_chat_completion(monkeypatch) -> None:
     assert response.text == "agentblaster-ok"
 
 
+def test_openai_chat_completion_sends_tools_and_response_format() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json_loads_request(request)
+        assert payload["response_format"] == {"type": "json_object"}
+        assert payload["tools"][0]["function"]["name"] == "ping_agentblaster"
+        assert payload["tool_choice"]["function"]["name"] == "ping_agentblaster"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {"name": "ping_agentblaster", "arguments": "{}"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+            headers={"content-type": "application/json"},
+        )
+
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    adapter = OpenAICompatibleAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    case = BenchmarkCase(
+        id="toolcase",
+        title="tool case",
+        prompt="Use tool",
+        expected_tool_name="ping_agentblaster",
+        response_format={"type": "json_object"},
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "ping_agentblaster",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        tool_choice={"type": "function", "function": {"name": "ping_agentblaster"}},
+    )
+
+    response = adapter.chat_completion("qwen-test", case)
+
+    assert response.tool_names == ["ping_agentblaster"]
+
+
 def test_anthropic_probe_uses_x_api_key(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_TEST_KEY", "test-key")
 
@@ -134,3 +186,52 @@ def test_anthropic_smoke_chat_posts_messages(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.text == "agentblaster-ok"
+
+
+def test_anthropic_chat_completion_converts_openai_tool_schema() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json_loads_request(request)
+        assert payload["tools"][0]["name"] == "ping_agentblaster"
+        assert payload["tools"][0]["input_schema"]["type"] == "object"
+        assert payload["tool_choice"]["name"] == "ping_agentblaster"
+        return httpx.Response(
+            200,
+            json={"content": [{"type": "tool_use", "name": "ping_agentblaster", "input": {}}]},
+            headers={"content-type": "application/json"},
+        )
+
+    provider = ProviderConfig(name="anthropic-like", contract=ApiContract.ANTHROPIC, base_url="https://example.com/v1")
+    adapter = AnthropicCompatibleAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    case = BenchmarkCase(
+        id="toolcase",
+        title="tool case",
+        prompt="Use tool",
+        expected_tool_name="ping_agentblaster",
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "ping_agentblaster",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        tool_choice={"type": "function", "function": {"name": "ping_agentblaster"}},
+    )
+
+    response = adapter.chat_completion("claude-test", case)
+
+    assert response.tool_names == ["ping_agentblaster"]
+
+
+def test_extract_openai_tool_names_ignores_malformed_blocks() -> None:
+    assert extract_openai_tool_names({"choices": [{"message": {"tool_calls": [{"function": {"name": "x"}}]}}]}) == [
+        "x"
+    ]
+    assert extract_openai_tool_names({"choices": [{"message": {"tool_calls": [{"function": {}}]}}]}) == []
+
+
+def json_loads_request(request: httpx.Request):
+    import json
+
+    return json.loads(request.read().decode())

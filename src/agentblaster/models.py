@@ -80,6 +80,7 @@ class AdapterResponse(BaseModel):
     latency_ms: float
     raw: dict[str, Any] = Field(default_factory=dict)
     text: str = ""
+    tool_names: list[str] = Field(default_factory=list)
 
 
 class BenchmarkCase(BaseModel):
@@ -90,7 +91,13 @@ class BenchmarkCase(BaseModel):
     id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_.-]+$")
     title: str
     prompt: str
-    expected_substring: str
+    expected_substring: str | None = None
+    expected_json_fields: dict[str, Any] = Field(default_factory=dict)
+    expected_tool_name: str | None = None
+    system_prompt: str | None = None
+    response_format: dict[str, Any] | None = None
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    tool_choice: str | dict[str, Any] | None = None
     max_tokens: int = Field(default=32, ge=1)
     temperature: float = Field(default=0.0, ge=0.0)
     tags: list[str] = Field(default_factory=list)
@@ -143,6 +150,7 @@ class RunManifest(BaseModel):
     raw_trace_mode: RawTraceMode
     created_at: str
     case_count: int = 0
+    concurrency: int = 1
 
 
 class RunSummary(BaseModel):
@@ -155,5 +163,6 @@ class RunSummary(BaseModel):
     total_cases: int
     passed: int
     failed: int
+    concurrency: int = 1
     results_path: str
     manifest_path: str

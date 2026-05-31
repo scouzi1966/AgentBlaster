@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from agentblaster.adapters import ProviderAdapter, adapter_for
@@ -47,7 +49,7 @@ class ArtifactWriter:
         payload = raw if mode is RawTraceMode.FULL else redact_value(raw)
         path = raw_dir / f"{case_id}.response.json"
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return str(path.relative_to(self.run_dir))
+        return path.relative_to(self.run_dir).as_posix()
 
     def append_result(self, result: BenchmarkResult) -> None:
         with (self.run_dir / "results.jsonl").open("a", encoding="utf-8") as handle:
@@ -69,12 +71,14 @@ class BenchmarkRunner:
         adapter: ProviderAdapter | None = None,
         output_dir: Path = Path("runs"),
         raw_trace_mode: RawTraceMode = RawTraceMode.REDACTED,
+        concurrency: int = 1,
     ) -> None:
         self.provider = provider
         self.suite = suite
         self.adapter = adapter or adapter_for(provider)
         self.output_dir = output_dir
         self.raw_trace_mode = raw_trace_mode
+        self.concurrency = max(1, concurrency)
 
     def run(self, model: str | None = None) -> RunSummary:
         resolved_model = model or self.provider.default_model
@@ -91,23 +95,34 @@ class BenchmarkRunner:
             raw_trace_mode=self.raw_trace_mode,
             created_at=datetime.now(UTC).isoformat(),
             case_count=len(self.suite.cases),
+            concurrency=self.concurrency,
         )
         writer = ArtifactWriter(self.output_dir, manifest)
         writer.initialize()
 
         results: list[BenchmarkResult] = []
-        for case in self.suite.cases:
-            response = self.adapter.chat_completion(resolved_model, case)
-            raw_response_path = writer.write_raw_response(case.id, response.raw, self.raw_trace_mode)
-            result = result_from_response(
-                run_id=run_id,
-                suite=self.suite.name,
-                provider_name=self.provider.name,
-                model=resolved_model,
-                case=case,
-                response=response,
-                raw_response_path=raw_response_path,
-            )
+        for case, response, error in self._execute_cases(resolved_model):
+            if response is not None:
+                raw_response_path = writer.write_raw_response(case.id, response.raw, self.raw_trace_mode)
+                result = result_from_response(
+                    run_id=run_id,
+                    suite=self.suite.name,
+                    provider_name=self.provider.name,
+                    model=resolved_model,
+                    case=case,
+                    response=response,
+                    raw_response_path=raw_response_path,
+                )
+            else:
+                result = result_from_error(
+                    run_id=run_id,
+                    suite=self.suite.name,
+                    provider_name=self.provider.name,
+                    contract=self.provider.contract,
+                    model=resolved_model,
+                    case=case,
+                    message=error or "unknown case execution error",
+                )
             writer.append_result(result)
             results.append(result)
 
@@ -119,11 +134,25 @@ class BenchmarkRunner:
             total_cases=len(results),
             passed=sum(1 for result in results if result.ok),
             failed=sum(1 for result in results if not result.ok),
+            concurrency=self.concurrency,
             results_path="results.jsonl",
             manifest_path="manifest.json",
         )
         writer.write_summary(summary)
         return summary
+
+    def _execute_cases(self, model: str) -> list[tuple[BenchmarkCase, AdapterResponse | None, str | None]]:
+        if self.concurrency == 1 or len(self.suite.cases) <= 1:
+            return [self._execute_case(model, case) for case in self.suite.cases]
+
+        with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
+            return list(executor.map(lambda case: self._execute_case(model, case), self.suite.cases))
+
+    def _execute_case(self, model: str, case: BenchmarkCase) -> tuple[BenchmarkCase, AdapterResponse | None, str | None]:
+        try:
+            return case, self.adapter.chat_completion(model, case), None
+        except Exception as exc:  # noqa: BLE001 - benchmark harness records provider/runtime failures per case
+            return case, None, str(exc)
 
 
 class SmokeRunner:
@@ -214,9 +243,9 @@ def result_from_response(
     raw_response_path: str | None,
 ) -> BenchmarkResult:
     input_tokens, output_tokens, total_tokens = normalize_usage(response.contract, response.raw)
-    expected_seen = case.expected_substring.lower() in response.text.lower()
-    ok = 200 <= response.status_code < 300 and expected_seen
-    message = "ok" if ok else response.text[:240] or f"HTTP {response.status_code}"
+    assertion_ok, assertion_message = evaluate_case_assertions(case, response)
+    ok = 200 <= response.status_code < 300 and assertion_ok
+    message = "ok" if ok else assertion_message or response.text[:240] or f"HTTP {response.status_code}"
 
     return BenchmarkResult(
         run_id=run_id,
@@ -235,6 +264,73 @@ def result_from_response(
         message=message,
         raw_response_path=raw_response_path,
     )
+
+
+def result_from_error(
+    *,
+    run_id: str,
+    suite: str,
+    provider_name: str,
+    contract: ApiContract,
+    model: str,
+    case: BenchmarkCase,
+    message: str,
+) -> BenchmarkResult:
+    return BenchmarkResult(
+        run_id=run_id,
+        case_id=case.id,
+        suite=suite,
+        provider=provider_name,
+        contract=contract,
+        model=model,
+        ok=False,
+        failure_class="engine_runtime_bug",
+        message=message,
+    )
+
+
+def evaluate_case_assertions(case: BenchmarkCase, response: AdapterResponse) -> tuple[bool, str]:
+    if case.expected_substring is not None:
+        if case.expected_substring.lower() not in response.text.lower():
+            return False, f"missing expected substring: {case.expected_substring}"
+
+    if case.expected_json_fields:
+        parsed = _parse_json_text(response.text)
+        if parsed is None:
+            return False, "response text is not valid JSON"
+        for path, expected_value in case.expected_json_fields.items():
+            actual = _lookup_path(parsed, path)
+            if actual != expected_value:
+                return False, f"JSON field {path} expected {expected_value!r}, got {actual!r}"
+
+    if case.expected_tool_name is not None:
+        if case.expected_tool_name not in response.tool_names:
+            return False, f"missing expected tool call: {case.expected_tool_name}"
+
+    return True, ""
+
+
+def _parse_json_text(text: str) -> Any | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+
+
+def _lookup_path(value: Any, path: str) -> Any:
+    current = value
+    for part in path.split("."):
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, list) and part.isdigit():
+            index = int(part)
+            current = current[index] if index < len(current) else None
+        else:
+            return None
+    return current
 
 
 def normalize_usage(contract: ApiContract, raw: dict) -> tuple[int | None, int | None, int | None]:

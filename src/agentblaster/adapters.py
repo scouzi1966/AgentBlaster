@@ -82,12 +82,22 @@ class OpenAICompatibleAdapter(ProviderAdapter):
 
     def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
         url = str(self.provider.base_url).rstrip("/") + "/chat/completions"
+        messages = []
+        if case.system_prompt:
+            messages.append({"role": "system", "content": case.system_prompt})
+        messages.append({"role": "user", "content": case.prompt})
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": case.prompt}],
+            "messages": messages,
             "temperature": case.temperature,
             "max_tokens": case.max_tokens,
         }
+        if case.response_format:
+            payload["response_format"] = case.response_format
+        if case.tools:
+            payload["tools"] = case.tools
+        if case.tool_choice:
+            payload["tool_choice"] = case.tool_choice
         started = perf_counter()
         try:
             response = self.client.post(url, headers=self._headers(), json=payload)
@@ -105,6 +115,7 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             message = choices[0].get("message", {})
             if isinstance(message, Mapping):
                 text = str(message.get("content") or "")
+        tool_names = extract_openai_tool_names(raw)
 
         return AdapterResponse(
             provider=self.provider.name,
@@ -113,6 +124,7 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             latency_ms=latency_ms,
             raw=raw,
             text=text,
+            tool_names=tool_names,
         )
 
 
@@ -156,6 +168,12 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             "temperature": case.temperature,
             "messages": [{"role": "user", "content": case.prompt}],
         }
+        if case.system_prompt:
+            payload["system"] = case.system_prompt
+        if case.tools:
+            payload["tools"] = [_openai_tool_to_anthropic(tool) for tool in case.tools]
+        if case.tool_choice:
+            payload["tool_choice"] = _openai_tool_choice_to_anthropic(case.tool_choice)
         started = perf_counter()
         try:
             response = self.client.post(url, headers=self._headers(), json=payload)
@@ -173,6 +191,7 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             for block in content:
                 if isinstance(block, Mapping) and block.get("type") == "text":
                     text_parts.append(str(block.get("text") or ""))
+        tool_names = extract_anthropic_tool_names(raw)
 
         return AdapterResponse(
             provider=self.provider.name,
@@ -181,6 +200,7 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             latency_ms=latency_ms,
             raw=raw,
             text="".join(text_parts),
+            tool_names=tool_names,
         )
 
 
@@ -190,3 +210,58 @@ def adapter_for(provider: ProviderConfig, *, secrets: SecretResolver | None = No
     if provider.contract is ApiContract.ANTHROPIC:
         return AnthropicCompatibleAdapter(provider, secrets=secrets)
     raise AdapterError(f"no generic adapter exists for native provider: {provider.name}")
+
+
+def extract_openai_tool_names(raw: Mapping[str, Any]) -> list[str]:
+    names: list[str] = []
+    choices = raw.get("choices", [])
+    if not isinstance(choices, list):
+        return names
+    for choice in choices:
+        if not isinstance(choice, Mapping):
+            continue
+        message = choice.get("message", {})
+        if not isinstance(message, Mapping):
+            continue
+        tool_calls = message.get("tool_calls", [])
+        if not isinstance(tool_calls, list):
+            continue
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, Mapping):
+                continue
+            function = tool_call.get("function", {})
+            if isinstance(function, Mapping) and function.get("name"):
+                names.append(str(function["name"]))
+    return names
+
+
+def extract_anthropic_tool_names(raw: Mapping[str, Any]) -> list[str]:
+    names: list[str] = []
+    content = raw.get("content", [])
+    if not isinstance(content, list):
+        return names
+    for block in content:
+        if isinstance(block, Mapping) and block.get("type") == "tool_use" and block.get("name"):
+            names.append(str(block["name"]))
+    return names
+
+
+def _openai_tool_to_anthropic(tool: Mapping[str, Any]) -> dict[str, Any]:
+    if tool.get("type") == "function" and isinstance(tool.get("function"), Mapping):
+        function = tool["function"]
+        return {
+            "name": function.get("name"),
+            "description": function.get("description", ""),
+            "input_schema": function.get("parameters", {"type": "object", "properties": {}}),
+        }
+    return dict(tool)
+
+
+def _openai_tool_choice_to_anthropic(tool_choice: str | Mapping[str, Any]) -> str | dict[str, Any]:
+    if isinstance(tool_choice, str):
+        if tool_choice in {"auto", "any", "none"}:
+            return tool_choice
+        return {"type": "tool", "name": tool_choice}
+    if tool_choice.get("type") == "function" and isinstance(tool_choice.get("function"), Mapping):
+        return {"type": "tool", "name": str(tool_choice["function"].get("name"))}
+    return dict(tool_choice)

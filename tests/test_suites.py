@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 
 from agentblaster.errors import ConfigError
-from agentblaster.suites import load_suite_file, validate_case_or_suite_file
+from agentblaster.suites import BUILTIN_SUITES, load_suite_file, validate_case_or_suite_file
+
+
+def test_builtin_suites_include_core_mvp_families() -> None:
+    assert {"smoke", "structured", "toolcall", "prefill"}.issubset(BUILTIN_SUITES)
 
 
 def test_load_suite_file(tmp_path) -> None:

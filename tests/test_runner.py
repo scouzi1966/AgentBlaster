@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from agentblaster.models import AdapterResponse, ApiContract, BenchmarkCase, ProviderConfig, RawTraceMode, SuiteDefinition
-from agentblaster.runner import BenchmarkRunner, SmokeRunner, normalize_usage
+from agentblaster.runner import BenchmarkRunner, SmokeRunner, evaluate_case_assertions, normalize_usage
 
 
 class FakeAdapter:
@@ -15,6 +15,11 @@ class FakeAdapter:
 
     def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
         return self.response
+
+
+class FailingAdapter:
+    def chat_completion(self, model: str, case: BenchmarkCase) -> AdapterResponse:
+        raise RuntimeError("provider exploded")
 
 
 def test_normalize_openai_usage() -> None:
@@ -127,8 +132,96 @@ def test_benchmark_runner_writes_summary_for_suite(tmp_path) -> None:
         adapter=FakeAdapter(response),  # type: ignore[arg-type]
         output_dir=tmp_path,
         raw_trace_mode=RawTraceMode.OFF,
+        concurrency=2,
     ).run(model="qwen-test")
 
     assert summary.total_cases == 1
     assert summary.passed == 1
+    assert summary.concurrency == 2
     assert (tmp_path / summary.run_id / "summary.json").exists()
+
+
+def test_benchmark_runner_records_case_runtime_failures(tmp_path) -> None:
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    suite = SuiteDefinition(
+        name="custom-smoke",
+        description="custom suite",
+        cases=[
+            BenchmarkCase(
+                id="case-one",
+                title="case one",
+                prompt="Reply with exactly: agentblaster-ok",
+                expected_substring="agentblaster-ok",
+            )
+        ],
+    )
+
+    summary = BenchmarkRunner(
+        provider,
+        suite,
+        adapter=FailingAdapter(),  # type: ignore[arg-type]
+        output_dir=tmp_path,
+        raw_trace_mode=RawTraceMode.OFF,
+    ).run(model="qwen-test")
+
+    assert summary.failed == 1
+    result_line = (tmp_path / summary.run_id / "results.jsonl").read_text(encoding="utf-8")
+    assert "engine_runtime_bug" in result_line
+    assert "provider exploded" in result_line
+
+
+def test_evaluate_case_assertions_supports_json_fields() -> None:
+    case = BenchmarkCase(
+        id="json-case",
+        title="json case",
+        prompt="Return JSON",
+        expected_json_fields={"status": "agentblaster-ok", "nested.count": 1},
+    )
+    response = AdapterResponse(
+        provider="openai-like",
+        contract=ApiContract.OPENAI,
+        status_code=200,
+        latency_ms=1.0,
+        text='{"status":"agentblaster-ok","nested":{"count":1}}',
+    )
+
+    assert evaluate_case_assertions(case, response) == (True, "")
+
+
+def test_evaluate_case_assertions_reports_json_mismatch() -> None:
+    case = BenchmarkCase(
+        id="json-case",
+        title="json case",
+        prompt="Return JSON",
+        expected_json_fields={"status": "agentblaster-ok"},
+    )
+    response = AdapterResponse(
+        provider="openai-like",
+        contract=ApiContract.OPENAI,
+        status_code=200,
+        latency_ms=1.0,
+        text='{"status":"wrong"}',
+    )
+
+    ok, message = evaluate_case_assertions(case, response)
+
+    assert ok is False
+    assert "JSON field status expected" in message
+
+
+def test_evaluate_case_assertions_supports_tool_name() -> None:
+    case = BenchmarkCase(
+        id="tool-case",
+        title="tool case",
+        prompt="Use tool",
+        expected_tool_name="ping_agentblaster",
+    )
+    response = AdapterResponse(
+        provider="openai-like",
+        contract=ApiContract.OPENAI,
+        status_code=200,
+        latency_ms=1.0,
+        tool_names=["ping_agentblaster"],
+    )
+
+    assert evaluate_case_assertions(case, response) == (True, "")
