@@ -15,3 +15,7 @@ class SecretError(AgentBlasterError):
 
 class AdapterError(AgentBlasterError):
     """Raised when a provider adapter cannot complete a request."""
+
+
+class PolicyError(AgentBlasterError):
+    """Raised when a run violates configured enterprise policy."""

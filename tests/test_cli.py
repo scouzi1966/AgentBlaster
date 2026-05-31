@@ -128,3 +128,41 @@ def test_cli_run_smoke_writes_artifacts(monkeypatch, tmp_path) -> None:
         assert list((tmp_path / "runs").glob("*/results.jsonl"))
     finally:
         server.shutdown()
+
+
+def test_cli_run_offline_blocks_remote_provider(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("AGENTBLASTER_HOME", str(tmp_path / "config"))
+    runner = CliRunner()
+
+    add_result = runner.invoke(
+        app,
+        [
+            "providers",
+            "add",
+            "--name",
+            "openai",
+            "--contract",
+            "openai",
+            "--base-url",
+            "https://api.openai.com/v1",
+            "--remote",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--suite",
+            "smoke",
+            "--engine",
+            "openai",
+            "--model",
+            "qwen-test",
+            "--offline",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "remote providers are disabled" in result.output

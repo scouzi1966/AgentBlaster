@@ -26,9 +26,13 @@ agentblaster providers list
 agentblaster providers auth test --provider openai
 agentblaster providers probe openai
 agentblaster run --suite smoke --engine openai --model gpt-4.1-mini --no-raw-traces
+agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --offline
+agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --policy agentblaster.policy.yaml
 ```
 
 Provider profiles are stored locally without raw API keys. API keys can be referenced through environment variables today; optional OS keyring support is defined for persistent secret entry.
+
+Run execution already includes the first enterprise controls: raw traces can be disabled, remote providers can be blocked with `--offline`, and YAML policy files can allowlist providers and endpoint hosts.
 
 ## Planned Benchmark CLI
 

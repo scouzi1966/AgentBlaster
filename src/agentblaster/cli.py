@@ -10,6 +10,7 @@ from agentblaster.adapters import adapter_for
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
 from agentblaster.models import ApiContract, ProviderConfig, RawTraceMode, SecretRef
+from agentblaster.policy import enforce_provider_policy, load_policy, offline_policy
 from agentblaster.runner import SmokeRunner
 from agentblaster.secrets import SecretResolver
 
@@ -38,6 +39,8 @@ def run(
     engine: Annotated[str, typer.Option(help="Configured provider/engine profile name.")],
     model: Annotated[str | None, typer.Option(help="Model id. Required unless provider has a default model.")] = None,
     output_dir: Annotated[Path, typer.Option(help="Directory where run artifacts are written.")] = Path("runs"),
+    policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
+    offline: Annotated[bool, typer.Option(help="Block providers marked as remote.")] = False,
     raw_traces: Annotated[
         RawTraceMode,
         typer.Option(help="Raw response capture mode."),
@@ -50,6 +53,12 @@ def run(
 
     provider = ProviderStore().get(engine)
     trace_mode = RawTraceMode.OFF if no_raw_traces else raw_traces
+    security_policy = offline_policy() if offline else load_policy(policy)
+    try:
+        enforce_provider_policy(provider, security_policy, raw_trace_mode=trace_mode)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
     try:
         result = SmokeRunner(provider, output_dir=output_dir, raw_trace_mode=trace_mode).run(model=model)
     except AgentBlasterError as exc:
