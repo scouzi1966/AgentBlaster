@@ -15,11 +15,23 @@ The goal is to measure the hard parts of local agent workloads: repeated long sy
 
 This repository is freshly scaffolded from the initial PRD. The product requirements live in [docs/prd.md](docs/prd.md).
 
-## Planned CLI
+## Implemented CLI Foundation
 
 ```bash
+agentblaster version
 agentblaster engines list
 agentblaster engines probe --engine afm --base-url http://127.0.0.1:9999/v1
+agentblaster providers add --name openai --contract openai --base-url https://api.openai.com/v1 --api-key-env OPENAI_API_KEY --remote
+agentblaster providers list
+agentblaster providers auth test --provider openai
+agentblaster providers probe openai
+```
+
+Provider profiles are stored locally without raw API keys. API keys can be referenced through environment variables today; optional OS keyring support is defined for persistent secret entry.
+
+## Planned Benchmark CLI
+
+```bash
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B
 agentblaster report runs/<run-id> --format html
 ```
