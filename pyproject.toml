@@ -12,6 +12,11 @@ dependencies = [
   "rich>=13.7",
 ]
 
+[project.optional-dependencies]
+secrets = [
+  "keyring>=25.0",
+]
+
 [project.scripts]
 agentblaster = "agentblaster.cli:app"
 

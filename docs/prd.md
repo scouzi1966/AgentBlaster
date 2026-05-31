@@ -38,12 +38,14 @@ The suite should treat OpenAI Chat Completions as the baseline compatibility tar
 - oMLX: MLX-native Apple Silicon server with OpenAI-compatible API, continuous batching, SSD caching, tool calling, JSON schema validation, and MCP tool integration claims.
 - Rapid-MLX: MLX-native Apple Silicon server with OpenAI-compatible API, tool parsers, prompt cache, reasoning separation, and agent integration claims.
 - vLLM-MLX: optional comparator for OpenAI plus Anthropic server behavior on Apple Silicon.
+- Remote OpenAI-compatible providers: any internet-facing endpoint that implements enough of the OpenAI contract, including OpenAI, OpenRouter, Together, Fireworks, Groq, DeepInfra, Cerebras, SambaNova, Anyscale-compatible gateways, LiteLLM gateways, and enterprise/private gateways.
+- Remote Anthropic-compatible providers: Anthropic Claude API and any gateway that implements the Anthropic Messages contract.
 
 ### Phase 2
 
 - llama.cpp server.
 - vLLM, SGLang, TensorRT-LLM, and other x86/Linux engines for cross-platform comparability.
-- Cloud OpenAI/Anthropic/OpenRouter baselines for reference, clearly labeled as remote.
+- Additional cloud and hosted baselines, clearly labeled as remote and never mixed with local-engine rankings unless the report explicitly opts in.
 
 ## Target Models
 
@@ -68,6 +70,7 @@ Gemma 4 31B is the dense Gemma 4 target. Google describes Gemma 4 models as suit
 ## Goals
 
 - Provide a standard, reproducible CLI benchmark across engines.
+- Support local engines and internet-facing OpenAI-compatible or Anthropic-compatible APIs through the same benchmark runner.
 - Normalize OpenAI, Anthropic, and engine-native metrics into one schema.
 - Measure agent-relevant runtime behavior: TTFT, prefill throughput, decode throughput, queue latency, cache hit rate, tool-call validity, structured-output validity, and multi-turn success.
 - Support both isolated microbenchmarks and end-to-end agent traces.
@@ -79,6 +82,7 @@ Gemma 4 31B is the dense Gemma 4 target. Google describes Gemma 4 models as suit
 - Do not claim a universal model-quality leaderboard from a small synthetic suite.
 - Do not require every engine to expose identical proprietary metrics.
 - Do not require users to launch engines through the suite; external endpoints must be supported.
+- Do not require API keys to be stored in plaintext config files.
 - Do not execute arbitrary agent tools against the host without sandboxing and explicit opt-in.
 - Do not hide harness failures inside model or engine scores.
 
@@ -293,20 +297,25 @@ Every failing test must be classified as one of:
 
 ### CLI
 
-- `agentbench engines list`
-- `agentbench engines probe --engine <name> --base-url <url>`
-- `agentbench run --suite <suite> --engine <engine> --model <model>`
-- `agentbench run --matrix matrix.yaml`
-- `agentbench compare runs/<run-a> runs/<run-b>`
-- `agentbench report runs/<run-id> --format html,pdf,png,json`
-- `agentbench dashboard --runs runs/`
-- `agentbench validate-case path/to/case.yaml`
-- `agentbench export runs/<run-id> --format parquet,jsonl,csv`
+- `agentblaster engines list`
+- `agentblaster engines probe --engine <name> --base-url <url>`
+- `agentblaster providers add --name <name> --contract openai|anthropic --base-url <url>`
+- `agentblaster providers auth set --provider <name> --api-key-stdin`
+- `agentblaster providers auth test --provider <name>`
+- `agentblaster run --suite <suite> --engine <engine> --model <model>`
+- `agentblaster run --matrix matrix.yaml`
+- `agentblaster compare runs/<run-a> runs/<run-b>`
+- `agentblaster report runs/<run-id> --format html,pdf,png,json`
+- `agentblaster dashboard --runs runs/`
+- `agentblaster validate-case path/to/case.yaml`
+- `agentblaster export runs/<run-id> --format parquet,jsonl,csv`
 
 ### Engine Adapters
 
 - OpenAI-compatible adapter.
 - Anthropic-compatible adapter.
+- Remote OpenAI-compatible adapter with API-key authentication, custom headers, base URL overrides, and provider-specific capability overrides.
+- Remote Anthropic-compatible adapter with API-key authentication, version headers, beta headers, base URL overrides, and provider-specific capability overrides.
 - Ollama native adapter.
 - LM Studio native REST adapter.
 - AFM adapter with AFM-specific metrics and flags.
@@ -327,7 +336,52 @@ Each adapter must define:
 - Streaming parser.
 - Usage normalizer.
 - Native metrics collectors.
+- Authentication strategy.
+- Secret lookup strategy.
 - Known unsupported fields.
+
+### Provider And Secret Management
+
+AgentBlaster must support both local unauthenticated endpoints and internet-facing authenticated providers.
+
+Provider config should include:
+
+- `name`
+- `contract`: `openai`, `anthropic`, or `native`
+- `base_url`
+- `api_key_ref`
+- `default_model`
+- `headers`
+- `capabilities`
+- `rate_limits`
+- `cost_model`
+- `remote`: `true` or `false`
+
+API key storage requirements:
+
+- Prefer Apple Keychain on macOS.
+- Prefer Secret Service/libsecret on Linux desktops where available.
+- Prefer Windows Credential Manager on Windows.
+- Support environment-variable references for CI, for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`.
+- Support one-time `--api-key-stdin` entry for scripting without shell history leakage.
+- Support plaintext `.env` only as an explicit opt-in development fallback, with warnings.
+- Never write raw API keys to run manifests, traces, logs, reports, or screenshots.
+- Redact `Authorization`, `x-api-key`, `api-key`, and provider-specific auth headers in raw artifact capture.
+
+Apple Keychain feasibility:
+
+- Python can integrate with the `keyring` package, which uses macOS Keychain when available.
+- The recommended service name is `AgentBlaster`.
+- The recommended username format is `<provider-name>:<credential-name>`, for example `openai:api_key`.
+- Keychain support must be optional at install time and fall back cleanly in headless CI.
+
+Remote-provider benchmark rules:
+
+- Remote providers must be labeled `remote` in reports.
+- Network latency must be measured separately from model/runtime latency where possible.
+- Cost estimates should be optional and based on user-provided or provider-known pricing.
+- Rate-limit errors must be classified separately from model or engine failures.
+- Remote cloud results must not be used as AFM-vs-local rankings unless explicitly selected.
 
 ### Test Case Format
 
@@ -565,6 +619,8 @@ Python is the right default because the suite needs broad platform support, easy
 - `adapters`: per-engine request, launch, probe, and metric code.
 - `contracts`: OpenAI, Anthropic, and native response schemas.
 - `normalizer`: raw response to canonical metrics.
+- `secrets`: API key storage and lookup through OS credential stores, environment variables, and explicit CI configuration.
+- `providers`: persisted provider profiles for local and remote endpoints.
 - `assertions`: deterministic and LLM-judge assertions.
 - `workloads`: YAML/JSON test cases and trace templates.
 - `collectors`: process, OS, Prometheus, and native engine telemetry.
@@ -580,7 +636,9 @@ agentbench/
   assertions/
   collectors/
   contracts/
+  providers/
   runner/
+  secrets/
   reporting/
   suites/
   dashboard/
@@ -635,6 +693,10 @@ Reports must avoid:
 
 ## Security Requirements
 
+- API keys must be stored in OS-native credential stores where available, with Apple Keychain as the preferred macOS implementation.
+- API keys must never be printed, logged, committed, exported in reports, or stored in raw trace artifacts.
+- Environment variable and stdin-based secret entry must be supported for CI and headless environments.
+- Plaintext secret files are an explicit opt-in fallback only.
 - Default suite must not execute host-mutating tools.
 - Tool execution tests run in temp sandboxes.
 - Shell, file write, browser, and network tools require explicit opt-in.
@@ -649,6 +711,7 @@ Reports must avoid:
 
 - CLI runner.
 - OpenAI Chat Completions adapter.
+- Remote OpenAI-compatible provider support with API key configuration.
 - Generic OpenAI-compatible engine profile.
 - AFM, mlx-lm, Ollama, LM Studio profiles.
 - Basic oMLX and Rapid-MLX profiles as OpenAI-compatible endpoints.
@@ -666,6 +729,8 @@ Reports must avoid:
 ### MVP Should Have
 
 - Anthropic Messages adapter.
+- Remote Anthropic-compatible provider support with API key configuration.
+- Apple Keychain integration via Python keyring on macOS.
 - LM Studio native stats collector.
 - Ollama native stats collector.
 - Prometheus collector.
@@ -680,6 +745,7 @@ Reports must avoid:
 - MCP mock server suite.
 - LLM-as-judge failure summaries.
 - Public static leaderboard generator.
+- Provider cost estimation for remote API runs.
 
 ## Phase Plan
 
@@ -751,6 +817,8 @@ Exit criteria:
 - Which hardware tiers should be official: M2/M3/M4/M5, 32 GB/64 GB/128 GB, plus x86 Linux GPU?
 - Should GUI reports prioritize static publication quality or interactive engineering diagnostics first?
 - Should public comparisons include cloud models, or keep cloud baselines separate to avoid confusing local-vs-remote claims?
+- Should `keyring` be a default dependency, an optional extra such as `agentblaster[secrets]`, or vendored behind a small abstraction?
+- Which hosted OpenAI-compatible providers should ship as first-party presets versus user-defined provider profiles?
 
 ## Success Metrics
 
