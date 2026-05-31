@@ -4,6 +4,8 @@ AgentBlaster is a local agentic benchmark suite for OpenAI-compatible, Anthropic
 
 The goal is to measure the hard parts of local agent workloads: repeated long system prompts, tool schemas, skills, MCP-style tool catalogs, structured output, streaming, cancellation, concurrency, prompt-cache reuse, and professional reporting.
 
+[![CI](https://github.com/scouzi1966/AgentBlaster/actions/workflows/ci.yml/badge.svg)](https://github.com/scouzi1966/AgentBlaster/actions/workflows/ci.yml)
+
 ## Initial Scope
 
 - Engines: AFM MLX, mlx-lm, Ollama MLX, LM Studio, oMLX, Rapid-MLX, and vLLM-MLX.
