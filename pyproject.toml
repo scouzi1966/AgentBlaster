@@ -1,0 +1,20 @@
+[project]
+name = "agentblaster"
+version = "0.1.0"
+description = "Local agentic benchmark suite for MLX and OpenAI-compatible inference engines."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "scouzi1966" }]
+dependencies = [
+  "httpx>=0.27",
+  "pydantic>=2.7",
+  "typer>=0.12",
+  "rich>=13.7",
+]
+
+[project.scripts]
+agentblaster = "agentblaster.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
