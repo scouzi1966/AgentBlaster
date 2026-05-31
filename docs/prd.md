@@ -74,6 +74,7 @@ Gemma 4 31B is the dense Gemma 4 target. Google describes Gemma 4 models as suit
 - Normalize OpenAI, Anthropic, and engine-native metrics into one schema.
 - Measure agent-relevant runtime behavior: TTFT, prefill throughput, decode throughput, queue latency, cache hit rate, tool-call validity, structured-output validity, and multi-turn success.
 - Support both isolated microbenchmarks and end-to-end agent traces.
+- Serve as a testbed for emerging harness engineering patterns: trace replay, tool simulators, synthetic workload generation, model judges, provider-contract fuzzing, cache-aware diagnostics, and reproducibility methods.
 - Produce professional HTML/PDF/PNG reports suitable for media posts, sales decks, technical blogs, and corporate reviews.
 - Make AFM regressions obvious and AFM advantages measurable.
 
@@ -188,6 +189,25 @@ Existing public benchmarks cover pieces of the problem but not the full local-ag
 - Tool-call transcript capture.
 - Reproducibility manifest.
 - Failure classification.
+
+### Emerging Harness Engineering
+
+AgentBlaster should intentionally test and compare benchmark harness techniques, not only models and inference engines.
+
+Areas to evaluate:
+
+- Trace capture and deterministic replay across providers.
+- Tool simulators that emulate filesystem, shell, browser, search, and MCP tools without host risk.
+- Contract fuzzing for OpenAI, Anthropic, and native provider response shapes.
+- Cache-aware workload generation for repeated prompts, skill packs, tool catalogs, and repo maps.
+- Concurrency stress patterns that mimic multi-agent fan-out and background worker bursts.
+- Judge calibration using deterministic assertions first, LLM judges second, and human-reviewable failure summaries.
+- Metamorphic tests where equivalent prompts, tool orders, or schema variants should produce equivalent behavior.
+- Synthetic workload generation with explicit provenance and risk labels.
+- Dataset hygiene: deduping, leakage checks, contamination notes, license/provenance tracking, and benchmark versioning.
+- Reproducibility engineering: fixed seeds where supported, stable tool results, environment manifests, signed run manifests, and replay bundles.
+
+Harness engineering outputs should be reported separately from engine/model results. A harness experiment can fail because the evaluation method is weak, even when the engine and model behave correctly.
 
 ## Standard Metric Schema
 
@@ -569,6 +589,26 @@ Reports:
 - Failure appendix.
 - Reproducibility manifest.
 
+#### 9. Harness Engineering Lab
+
+Purpose: evaluate new benchmark construction methods before promoting them into stable suites.
+
+Experiments:
+
+- Trace replay versus live execution.
+- Deterministic tool simulators versus real host tools.
+- LLM judge versus deterministic assertion agreement.
+- Prompt mutation and metamorphic equivalence checks.
+- Provider contract fuzzing.
+- Cache-aware synthetic prompt generation.
+- Concurrency burst generators.
+- Redaction quality checks.
+- Dataset contamination and provenance checks.
+
+Promotion rule:
+
+- Experimental harness methods must stay clearly labeled until they have reproducibility evidence, failure taxonomy coverage, and at least one known-good and known-bad calibration case.
+
 ## Optional GUI Dashboard
 
 The GUI should be optional and layered on top of the same run database as the CLI.
@@ -871,6 +911,7 @@ Policy violations must fail closed with a clear error and an audit event.
 - Public static leaderboard generator.
 - Provider cost estimation for remote API runs.
 - SBOM generation and dependency vulnerability scan target.
+- Harness Engineering Lab for experimental trace replay, judge calibration, contract fuzzing, and synthetic workload generation.
 
 ## Phase Plan
 
@@ -958,6 +999,7 @@ Exit criteria:
 - Reports clearly show AFM strengths and weaknesses versus oMLX, Rapid-MLX, Ollama MLX, mlx-lm, and LM Studio.
 - The benchmark catches prefill/cache regressions that simple tokens/sec tests miss.
 - The benchmark catches malformed streaming/tool-call regressions.
+- The benchmark improves its own harness quality by tracking experimental eval methods separately from stable engine/model scores.
 - The suite can generate a credible public report in under 10 minutes after a run completes.
 - New engine adapters can be added without changing core runner code.
 
