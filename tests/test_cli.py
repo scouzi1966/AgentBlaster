@@ -251,6 +251,80 @@ cases:
         server.shutdown()
 
 
+def test_cli_run_matrix(monkeypatch, tmp_path) -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            content_length = int(self.headers.get("content-length", "0"))
+            if content_length:
+                self.rfile.read(content_length)
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "choices": [{"message": {"content": "agentblaster-ok"}}],
+                        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+                    }
+                ).encode()
+            )
+
+        def log_message(self, format: str, *args) -> None:  # noqa: A002
+            return
+
+    matrix_path = tmp_path / "matrix.yaml"
+    matrix_path.write_text(
+        """
+name: test-matrix
+runs:
+  - engine: local-openai
+    suite: smoke
+    model: qwen-test
+    no_raw_traces: true
+""",
+        encoding="utf-8",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        monkeypatch.setenv("AGENTBLASTER_HOME", str(tmp_path / "config"))
+        runner = CliRunner()
+        base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+        runner.invoke(
+            app,
+            [
+                "providers",
+                "add",
+                "--name",
+                "local-openai",
+                "--contract",
+                "openai",
+                "--base-url",
+                base_url,
+            ],
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--matrix",
+                str(matrix_path),
+                "--output-dir",
+                str(tmp_path / "runs"),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "matrix: test-matrix" in result.output
+        assert "[1/1]" in result.output
+        assert list((tmp_path / "runs").glob("*/summary.json"))
+    finally:
+        server.shutdown()
+
+
 def test_cli_run_offline_blocks_remote_provider(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AGENTBLASTER_HOME", str(tmp_path / "config"))
     runner = CliRunner()

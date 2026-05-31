@@ -10,6 +10,7 @@ from agentblaster.adapters import adapter_for
 from agentblaster.audit import AuditLogger
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
+from agentblaster.matrix import load_matrix_file
 from agentblaster.models import ApiContract, ProviderConfig, RawTraceMode, SecretRef
 from agentblaster.policy import enforce_provider_policy, load_policy, offline_policy
 from agentblaster.presets import LOCAL_ENGINE_PRESETS, get_preset
@@ -39,10 +40,11 @@ def version() -> None:
 
 @app.command()
 def run(
-    engine: Annotated[str, typer.Option(help="Configured provider/engine profile name.")],
+    engine: Annotated[str | None, typer.Option(help="Configured provider/engine profile name.")] = None,
     model: Annotated[str | None, typer.Option(help="Model id. Required unless provider has a default model.")] = None,
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to run.")] = "smoke",
     suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to run.")] = None,
+    matrix: Annotated[Path | None, typer.Option(help="YAML matrix file containing multiple runs.")] = None,
     output_dir: Annotated[Path, typer.Option(help="Directory where run artifacts are written.")] = Path("runs"),
     policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
@@ -55,9 +57,77 @@ def run(
     no_raw_traces: Annotated[bool, typer.Option(help="Disable raw response capture.")] = False,
 ) -> None:
     """Run a benchmark suite against a configured provider."""
+    if matrix is not None:
+        _run_matrix(
+            matrix=matrix,
+            output_dir=output_dir,
+            policy=policy,
+            audit_log=audit_log,
+            offline=offline,
+        )
+        return
+
+    if engine is None:
+        raise typer.BadParameter("--engine is required unless --matrix is provided")
+
+    summary = _run_one(
+        engine=engine,
+        model=model,
+        suite=suite,
+        suite_file=suite_file,
+        output_dir=output_dir,
+        policy=policy,
+        audit_log=audit_log,
+        offline=offline,
+        concurrency=concurrency,
+        trace_mode=RawTraceMode.OFF if no_raw_traces else raw_traces,
+    )
+
+    _print_summary(summary)
+
+
+def _run_matrix(
+    *,
+    matrix: Path,
+    output_dir: Path,
+    policy: Path | None,
+    audit_log: Path | None,
+    offline: bool,
+) -> None:
+    matrix_definition = load_matrix_file(matrix)
+    typer.echo(f"matrix: {matrix_definition.name}")
+    for index, run_entry in enumerate(matrix_definition.runs, start=1):
+        trace_mode = RawTraceMode.OFF if run_entry.no_raw_traces else run_entry.raw_traces
+        summary = _run_one(
+            engine=run_entry.engine,
+            model=run_entry.model,
+            suite=run_entry.suite,
+            suite_file=run_entry.suite_file,
+            output_dir=output_dir,
+            policy=policy,
+            audit_log=audit_log,
+            offline=offline,
+            concurrency=run_entry.concurrency,
+            trace_mode=trace_mode,
+        )
+        typer.echo(f"[{index}/{len(matrix_definition.runs)}] {summary.run_id} {summary.provider} {summary.suite} ok={summary.failed == 0}")
+
+
+def _run_one(
+    *,
+    engine: str,
+    model: str | None,
+    suite: str,
+    suite_file: Path | None,
+    output_dir: Path,
+    policy: Path | None,
+    audit_log: Path | None,
+    offline: bool,
+    concurrency: int,
+    trace_mode: RawTraceMode,
+):
     provider = ProviderStore().get(engine)
     suite_definition = load_suite_file(suite_file) if suite_file else get_builtin_suite(suite)
-    trace_mode = RawTraceMode.OFF if no_raw_traces else raw_traces
     security_policy = offline_policy() if offline else load_policy(policy)
     audit = AuditLogger(audit_log)
     audit.emit(
@@ -99,6 +169,10 @@ def run(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    return summary
+
+
+def _print_summary(summary) -> None:
     typer.echo(f"run_id: {summary.run_id}")
     typer.echo(f"suite: {summary.suite}")
     typer.echo(f"provider: {summary.provider}")

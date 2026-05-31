@@ -1,0 +1,13 @@
+name: local-smoke
+description: Example matrix for local OpenAI-compatible engines.
+runs:
+  - engine: afm
+    suite: smoke
+    model: mlx-community/Qwen3.6-27B
+    concurrency: 1
+    no_raw_traces: true
+  - engine: lm-studio
+    suite_file: ../suites/smoke.yaml
+    model: qwen3.6-27b
+    concurrency: 1
+    no_raw_traces: true

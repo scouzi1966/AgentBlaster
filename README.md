@@ -33,6 +33,7 @@ agentblaster providers auth test --provider openai
 agentblaster providers probe openai
 agentblaster run --suite smoke --engine openai --model gpt-4.1-mini --no-raw-traces --audit-log runs/audit.jsonl --concurrency 1
 agentblaster run --suite-file examples/suites/smoke.yaml --engine openai --model gpt-4.1-mini --no-raw-traces
+agentblaster run --matrix examples/matrices/local-smoke.yaml --offline
 agentblaster report runs/<run-id> --format html,json
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --offline
 agentblaster run --suite smoke --engine afm --model mlx-community/Qwen3.6-27B --policy agentblaster.policy.yaml
