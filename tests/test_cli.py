@@ -431,5 +431,10 @@ def test_cli_report_generates_html_json_and_audit(monkeypatch, tmp_path) -> None
         assert (run_dir / "report.html").exists()
         assert (run_dir / "summary.json").exists()
         assert "run_completed" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+
+        export_result = runner.invoke(app, ["export", str(run_dir), "--format", "jsonl,csv"])
+        assert export_result.exit_code == 0, export_result.output
+        assert (run_dir / "exports" / "results.jsonl").exists()
+        assert (run_dir / "exports" / "results.csv").exists()
     finally:
         server.shutdown()

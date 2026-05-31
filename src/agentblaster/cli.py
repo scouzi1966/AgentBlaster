@@ -10,6 +10,7 @@ from agentblaster.adapters import adapter_for
 from agentblaster.audit import AuditLogger
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AgentBlasterError
+from agentblaster.exports import export_results
 from agentblaster.matrix import load_matrix_file
 from agentblaster.models import ApiContract, ProviderConfig, RawTraceMode, SecretRef
 from agentblaster.policy import enforce_provider_policy, load_policy, offline_policy
@@ -208,6 +209,21 @@ def report(
     """Generate reports from a completed run directory."""
     try:
         paths = generate_reports(run_dir, [item.strip() for item in format.split(",")])
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    for path in paths:
+        typer.echo(str(path))
+
+
+@app.command()
+def export(
+    run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
+    format: Annotated[str, typer.Option(help="Comma-separated formats: jsonl,csv.")] = "jsonl,csv",
+    output_dir: Annotated[Path | None, typer.Option(help="Optional export output directory.")] = None,
+) -> None:
+    """Export normalized results from a completed run directory."""
+    try:
+        paths = export_results(run_dir, [item.strip() for item in format.split(",")], output_dir=output_dir)
     except AgentBlasterError as exc:
         raise typer.BadParameter(str(exc)) from exc
     for path in paths:
