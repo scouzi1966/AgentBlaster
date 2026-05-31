@@ -359,21 +359,22 @@ Provider config should include:
 
 API key storage requirements:
 
-- Prefer Apple Keychain on macOS.
-- Prefer Secret Service/libsecret on Linux desktops where available.
-- Prefer Windows Credential Manager on Windows.
-- Support environment-variable references for CI, for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`.
-- Support one-time `--api-key-stdin` entry for scripting without shell history leakage.
+- Required portable paths: environment-variable references for CI, for example `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`.
+- Required portable paths: one-time `--api-key-stdin` entry for scripting without shell history leakage.
+- Optional OS-native secure storage: Apple Keychain on macOS.
+- Optional OS-native secure storage: Secret Service/libsecret on Linux desktops where available.
+- Optional OS-native secure storage: Windows Credential Manager on Windows.
 - Support plaintext `.env` only as an explicit opt-in development fallback, with warnings.
 - Never write raw API keys to run manifests, traces, logs, reports, or screenshots.
 - Redact `Authorization`, `x-api-key`, `api-key`, and provider-specific auth headers in raw artifact capture.
 
-Apple Keychain feasibility:
+OS keyring feasibility:
 
 - Python can integrate with the `keyring` package, which uses macOS Keychain when available.
 - The recommended service name is `AgentBlaster`.
 - The recommended username format is `<provider-name>:<credential-name>`, for example `openai:api_key`.
-- Keychain support must be optional at install time and fall back cleanly in headless CI.
+- Keyring support must be optional at install time and fall back cleanly on Linux, Windows, containers, SSH sessions, and headless CI.
+- The base package must run on macOS, Linux, and Windows without installing keyring extras.
 
 Remote-provider benchmark rules:
 
@@ -693,7 +694,7 @@ Reports must avoid:
 
 ## Security Requirements
 
-- API keys must be stored in OS-native credential stores where available, with Apple Keychain as the preferred macOS implementation.
+- API keys should be stored in OS-native credential stores when the optional secret backend is installed and available, with Apple Keychain as the preferred macOS implementation.
 - API keys must never be printed, logged, committed, exported in reports, or stored in raw trace artifacts.
 - Environment variable and stdin-based secret entry must be supported for CI and headless environments.
 - Plaintext secret files are an explicit opt-in fallback only.
@@ -730,7 +731,7 @@ Reports must avoid:
 
 - Anthropic Messages adapter.
 - Remote Anthropic-compatible provider support with API key configuration.
-- Apple Keychain integration via Python keyring on macOS.
+- Optional OS keyring integration via Python `keyring`, using Apple Keychain on macOS when available.
 - LM Studio native stats collector.
 - Ollama native stats collector.
 - Prometheus collector.
@@ -817,7 +818,7 @@ Exit criteria:
 - Which hardware tiers should be official: M2/M3/M4/M5, 32 GB/64 GB/128 GB, plus x86 Linux GPU?
 - Should GUI reports prioritize static publication quality or interactive engineering diagnostics first?
 - Should public comparisons include cloud models, or keep cloud baselines separate to avoid confusing local-vs-remote claims?
-- Should `keyring` be a default dependency, an optional extra such as `agentblaster[secrets]`, or vendored behind a small abstraction?
+- Which OS keyring backends should be tested in CI or manual release checks beyond macOS Keychain?
 - Which hosted OpenAI-compatible providers should ship as first-party presets versus user-defined provider profiles?
 
 ## Success Metrics
