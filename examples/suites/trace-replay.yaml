@@ -1,0 +1,33 @@
+name: trace-replay-example
+description: Example multi-turn trace replay suite with prior assistant tool use and deterministic tool result context.
+cases:
+  - id: trace-replay-tool-result-summary
+    title: Answer from replayed deterministic tool result
+    scenario: trace replay
+    prompt: Replay a prior tool-use conversation and answer from the tool result.
+    messages:
+      - role: system
+        content: You are replaying a deterministic AgentBlaster trace. Answer from the provided tool result only.
+      - role: user
+        content: Read /repo/src/app.py and report the status string.
+      - role: assistant
+        content: ""
+        tool_calls:
+          - id: call_read_app
+            type: function
+            function:
+              name: read_file_fixture
+              arguments: '{"path":"/repo/src/app.py"}'
+      - role: tool
+        name: read_file_fixture
+        tool_call_id: call_read_app
+        content: '{"path":"/repo/src/app.py","content":"def status():\n    return ''agentblaster-ok''\n"}'
+      - role: user
+        content: What exact string does status() return? Reply with only that string.
+    expected_substring: agentblaster-ok
+    max_tokens: 32
+    temperature: 0
+    tags:
+      - trace-replay
+      - tool-result
+      - agentic

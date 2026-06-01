@@ -18,7 +18,11 @@ secrets = [
   "keyring>=25.0",
 ]
 dev = [
+  "build>=1.2",
   "pytest>=8.0",
+]
+gui-test = [
+  "playwright>=1.44",
 ]
 
 [project.scripts]
@@ -30,3 +34,14 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+  "unit: fast isolated tests for schemas, policies, normalization, scoring, and pure helpers",
+  "contract: provider API shape tests using mocked or fixture responses",
+  "integration: local integration tests for CLI, storage, reports, exports, and dashboard HTTP surfaces",
+  "security: tests for redaction, policy enforcement, secret handling, and dashboard exposure controls",
+  "gui: browser-driven dashboard tests; requires Playwright or Chrome/Codex plugin-assisted validation",
+  "remote: opt-in tests that may call internet-facing provider APIs and require credentials",
+  "slow: hardware-specific, large-fixture, or long-running tests",
+  "packaging: source distribution, wheel, optional extras, and CLI entrypoint validation",
+]

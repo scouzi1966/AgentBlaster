@@ -10,3 +10,14 @@ cases:
     tags:
       - protocol
       - chat
+  - id: protocol-smoke-streaming-chat
+    title: Streaming chat completion returns expected text
+    prompt: "Stream a reply with exactly: agentblaster-ok"
+    expected_substring: agentblaster-ok
+    streaming: true
+    max_tokens: 16
+    temperature: 0
+    tags:
+      - protocol
+      - streaming
+      - chat

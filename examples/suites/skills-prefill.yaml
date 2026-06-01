@@ -1,0 +1,26 @@
+name: skills-prefill
+description: Deterministic skill-prefix suite for repeated system-prompt and prefill pressure.
+cases:
+  - id: skills-large-prefix
+    title: Large skill prefix prompt pressure
+    system_prompt: You are evaluating deterministic skill-prefix handling.
+    prompt: Reply with exactly agentblaster-ok after reading the injected skills.
+    expected_substring: agentblaster-ok
+    provenance: synthetic_representative
+    risk_level: low
+    skills:
+      - repo-triage
+      - safe-tool-replay
+      - large-prefix-diagnostic
+    metrics:
+      - ttft_ms
+      - cached_input_tokens
+      - cache_hit_ratio
+      - tokens_per_second_prefill
+      - tokens_per_second_decode
+    timeout_seconds: 60
+    max_tokens: 32
+    tags:
+      - skills
+      - prefill
+      - cache

@@ -3,6 +3,7 @@ description: Example tool-call suite.
 cases:
   - id: toolcall-required-ping
     title: Required ping tool call
+    scenario: tool calling
     prompt: Use the ping_agentblaster tool with target set to agentblaster-ok.
     expected_tool_name: ping_agentblaster
     tools:

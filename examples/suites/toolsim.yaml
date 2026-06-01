@@ -1,0 +1,28 @@
+name: toolsim
+description: Safe deterministic tool simulator smoke tests for agentic harness workflows.
+cases:
+  - id: toolsim-search-docs
+    title: Required deterministic docs search tool
+    prompt: Use search_docs with query set to AgentBlaster PRD.
+    provenance: synthetic_representative
+    risk_level: low
+    mcp_profile: fixture-mcp
+    skills:
+      - safe-tool-replay
+    metrics:
+      - ttft_ms
+      - tokens_per_second_decode
+    timeout_seconds: 30
+    expected_tool_name: search_docs
+    expected_tool_result_substring: local agentic inference engines
+    simulated_tools:
+      - search_docs
+    tool_choice:
+      type: function
+      function:
+        name: search_docs
+    max_tokens: 64
+    tags:
+      - toolcall
+      - toolsim
+      - safe-harness

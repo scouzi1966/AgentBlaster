@@ -1,0 +1,100 @@
+name: smoke-contract-fuzz-harness
+description: Deterministic streaming, structured-output, and tool-call contract fuzz harness generated from smoke.
+cases:
+- id: protocol-smoke-chat-stream-contract-01
+  title: Chat completion returns expected text / streaming contract fuzz 1
+  prompt: 'Stream a concise response containing exactly this marker: agentblaster-stream-0-1-1'
+  provenance: synthetic_representative
+  risk_level: low
+  expected_substring: agentblaster-stream-0-1-1
+  expected_json_fields: {}
+  tools: []
+  simulated_tools: []
+  skills: []
+  metrics:
+  - ttft_ms
+  - latency_ms
+  - tokens_per_second_decode
+  timeout_seconds: 30.0
+  streaming: true
+  max_tokens: 32
+  temperature: 0.0
+  tags:
+  - protocol
+  - chat
+  - harness
+  - contract-fuzz
+  - streaming
+  - synthetic
+- id: protocol-smoke-chat-json-contract-01
+  title: Chat completion returns expected text / structured-output contract fuzz 1
+  prompt: 'Return exactly this JSON object: {"marker": "agentblaster-json-0-1-1",
+    "status": "agentblaster-ok"}'
+  provenance: synthetic_representative
+  risk_level: low
+  expected_json_fields:
+    status: agentblaster-ok
+    marker: agentblaster-json-0-1-1
+  system_prompt: Return only valid JSON. Do not wrap the JSON in markdown.
+  response_format:
+    type: json_object
+  tools: []
+  simulated_tools: []
+  skills: []
+  metrics:
+  - structured_output_valid
+  - latency_ms
+  timeout_seconds: 30.0
+  streaming: false
+  max_tokens: 64
+  temperature: 0.0
+  tags:
+  - protocol
+  - chat
+  - harness
+  - contract-fuzz
+  - structured
+  - json
+  - synthetic
+- id: protocol-smoke-chat-tool-contract-01
+  title: Chat completion returns expected text / tool-call contract fuzz 1
+  prompt: Call ping_agentblaster with target set to agentblaster-tool-0-1-1.
+  provenance: synthetic_representative
+  risk_level: low
+  expected_json_fields: {}
+  expected_tool_name: ping_agentblaster
+  tools:
+  - type: function
+    function:
+      name: ping_agentblaster
+      description: Ping the AgentBlaster benchmark harness.
+      parameters:
+        type: object
+        properties:
+          target:
+            type: string
+            description: Ping target.
+        required:
+        - target
+        additionalProperties: false
+  tool_choice:
+    type: function
+    function:
+      name: ping_agentblaster
+  simulated_tools: []
+  skills: []
+  metrics:
+  - tool_call_count
+  - invalid_tool_call_count
+  - latency_ms
+  timeout_seconds: 30.0
+  streaming: false
+  max_tokens: 64
+  temperature: 0.0
+  tags:
+  - protocol
+  - chat
+  - harness
+  - contract-fuzz
+  - toolcall
+  - synthetic

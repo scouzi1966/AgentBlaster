@@ -41,6 +41,10 @@ class ProviderStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = providers_file.model_dump(mode="json", exclude_none=True)
         self.path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
     def upsert(self, provider: ProviderConfig) -> None:
         providers_file = self.load()

@@ -3,13 +3,29 @@ description: Example JSON structured-output suite.
 cases:
   - id: structured-json-object
     title: JSON object with expected status field
+    scenario: structured output
     system_prompt: Return only valid JSON.
     prompt: 'Return exactly this JSON object: {"status":"agentblaster-ok","count":1}'
     expected_json_fields:
       status: agentblaster-ok
       count: 1
     response_format:
-      type: json_object
+      type: json_schema
+      json_schema:
+        name: agentblaster_status
+        strict: true
+        schema:
+          type: object
+          required:
+            - status
+            - count
+          additionalProperties: false
+          properties:
+            status:
+              type: string
+              const: agentblaster-ok
+            count:
+              type: integer
     max_tokens: 64
     temperature: 0
     tags:

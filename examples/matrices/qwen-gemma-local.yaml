@@ -1,0 +1,39 @@
+name: trace-replay-providers-models
+description: Canonical trace-replay matrix for Qwen3.6 27B Dense and Gemma 4 31B Dense across local providers.
+runs:
+- engine: afm
+  model: mlx-community/Qwen3.6-27B
+  suite: trace-replay
+  concurrency: 1
+  raw_traces: redacted
+  no_raw_traces: true
+  model_metadata:
+    architecture: qwen3.6-dense
+    chat_template: qwen
+- engine: afm
+  model: google/gemma-4-31b
+  suite: trace-replay
+  concurrency: 1
+  raw_traces: redacted
+  no_raw_traces: true
+  model_metadata:
+    architecture: gemma-4-dense
+    chat_template: gemma
+- engine: lm-studio
+  model: mlx-community/Qwen3.6-27B
+  suite: trace-replay
+  concurrency: 1
+  raw_traces: redacted
+  no_raw_traces: true
+  model_metadata:
+    architecture: qwen3.6-dense
+    chat_template: qwen
+- engine: lm-studio
+  model: google/gemma-4-31b
+  suite: trace-replay
+  concurrency: 1
+  raw_traces: redacted
+  no_raw_traces: true
+  model_metadata:
+    architecture: gemma-4-dense
+    chat_template: gemma

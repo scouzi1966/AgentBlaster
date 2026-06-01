@@ -16,6 +16,9 @@ class SecretStore(Protocol):
     def set(self, ref: SecretRef, value: str) -> None:
         ...
 
+    def delete(self, ref: SecretRef) -> None:
+        ...
+
 
 class EnvironmentSecretStore:
     def get(self, ref: SecretRef) -> str | None:
@@ -25,6 +28,9 @@ class EnvironmentSecretStore:
 
     def set(self, ref: SecretRef, value: str) -> None:
         raise SecretError("environment secrets are read-only; set the variable in your shell or CI")
+
+    def delete(self, ref: SecretRef) -> None:
+        raise SecretError("environment secrets cannot be deleted by AgentBlaster; unset the variable in your shell or CI")
 
 
 class OptionalKeyringSecretStore:
@@ -50,6 +56,18 @@ class OptionalKeyringSecretStore:
             raise SecretError("keyring store can only write keyring secrets")
         self._keyring().set_password(self.service_name, ref.name, value)
 
+    def delete(self, ref: SecretRef) -> None:
+        if ref.kind != "keyring":
+            raise SecretError("keyring store can only delete keyring secrets")
+        keyring = self._keyring()
+        existing = keyring.get_password(self.service_name, ref.name)
+        if existing is None:
+            return
+        try:
+            keyring.delete_password(self.service_name, ref.name)
+        except AttributeError as exc:
+            raise SecretError("keyring backend does not support secret deletion") from exc
+
 
 class SecretResolver:
     def __init__(self, stores: list[SecretStore] | None = None) -> None:
@@ -59,7 +77,10 @@ class SecretResolver:
         if ref is None:
             return None
         for store in self.stores:
-            value = store.get(ref)
+            try:
+                value = store.get(ref)
+            except SecretError:
+                continue
             if value:
                 return value
         return None
@@ -74,3 +95,12 @@ class SecretResolver:
             except SecretError:
                 continue
         raise SecretError(f"no writable secret store is available for {ref.display()}")
+
+    def delete(self, ref: SecretRef) -> None:
+        for store in self.stores:
+            try:
+                store.delete(ref)
+                return
+            except SecretError:
+                continue
+        raise SecretError(f"no deletable secret store is available for {ref.display()}")

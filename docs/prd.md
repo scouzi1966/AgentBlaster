@@ -75,6 +75,7 @@ Gemma 4 31B is the dense Gemma 4 target. Google describes Gemma 4 models as suit
 - Measure agent-relevant runtime behavior: TTFT, prefill throughput, decode throughput, queue latency, cache hit rate, tool-call validity, structured-output validity, and multi-turn success.
 - Support both isolated microbenchmarks and end-to-end agent traces.
 - Serve as a testbed for emerging harness engineering patterns: trace replay, tool simulators, synthetic workload generation, model judges, provider-contract fuzzing, cache-aware diagnostics, and reproducibility methods.
+- Include a first-class SDLC-grade testing harness for AgentBlaster itself, covering unit, contract, integration, CLI, security, packaging, regression, release-qualification, and GUI validation, with Chrome/Codex plugin-assisted GUI testing where appropriate.
 - Produce professional HTML/PDF/PNG reports suitable for media posts, sales decks, technical blogs, and corporate reviews.
 - Make AFM regressions obvious and AFM advantages measurable.
 
@@ -209,6 +210,28 @@ Areas to evaluate:
 
 Harness engineering outputs should be reported separately from engine/model results. A harness experiment can fail because the evaluation method is weak, even when the engine and model behave correctly.
 
+## AgentBlaster Self-Test Harness
+
+AgentBlaster must include a first-party testing harness for the application itself, separate from the benchmark suites that test inference engines. This is a product requirement, not optional developer scaffolding. The harness is required for normal SDLC discipline and must be runnable locally by contributors, in CI/CD, and as part of release qualification before public or corporate-facing releases.
+
+Required coverage areas:
+
+- Unit tests for adapters, metric normalization, scoring, report rendering, policy enforcement, redaction, manifest signing, retention cleanup, and configuration parsing.
+- Schema and contract tests for OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, provider-native metrics, result records, suite YAML, manifests, reports, and dashboard API payloads.
+- Mock-provider and simulator tests that exercise success paths, malformed tool calls, streaming deltas, retryable failures, rate limits, timeout handling, cancellation, and provider-stat normalization without requiring paid APIs or local models.
+- Integration tests against local fake engines and optional real engines, clearly separated so CI can run deterministic offline tests while maintainers can opt into hardware/API-dependent checks.
+- CLI tests for suite discovery, run planning, dry runs, reports, comparison gates, matrix gates, provider audit, security scans, release qualification bundles, and failure exit codes.
+- Dashboard and GUI tests for setup, provider/API-key entry, run launch, progress display, artifact browsing, report generation, redaction visibility, policy-denial states, and release-bundle workflows.
+- Security tests for secret redaction, keyring fallback behavior, policy allow/deny rules, artifact allowlists, TLS settings, raw-trace controls, zip-slip/path traversal defenses, and safe handling of untrusted benchmark artifacts.
+- Regression and golden-file tests for report JSON/HTML/Markdown/card outputs, normalized metrics, comparison summaries, suite snapshots, and provenance metadata.
+- Packaging and install tests for Python package metadata, console entry points, optional dashboard dependencies, cross-platform path behavior, and keyring optionality.
+- Performance smoke tests for harness overhead, large-suite planning, report generation, artifact indexing, dashboard responsiveness, and benchmark-run orchestration overhead.
+- SDLC gate definitions for fast local checks, pre-merge CI, nightly/extended runs, release qualification, security review, and optional hardware/API-dependent certification.
+
+GUI validation should leverage Chrome/Codex browser automation where practical, including the Chrome plugin for flows that benefit from a real Chrome profile, installed extensions, cookies, or browser-level behavior. The expected workflow is to start the dashboard in a controlled local test mode, use the Chrome/Codex plugin to drive browser interactions, capture screenshots or traces for failing flows, and keep those checks deterministic by using mock providers and synthetic artifacts. Browser automation must never expose real API keys, raw secrets, raw traces, sensitive prompts, or unrestricted host tools.
+
+The self-test harness must produce machine-readable results and human-readable summaries suitable for release evidence. Tests should be grouped into fast local checks, CI-required checks, nightly/extended checks, optional engine/API checks, GUI/browser checks, security checks, packaging checks, and release-qualification checks.
+
 ## Standard Metric Schema
 
 Every result record should include:
@@ -329,6 +352,9 @@ Every failing test must be classified as one of:
 - `agentblaster dashboard --runs runs/`
 - `agentblaster validate-case path/to/case.yaml`
 - `agentblaster export runs/<run-id> --format parquet,jsonl,csv`
+- `agentblaster selftest --tier fast|normal|slow|security|gui|release`
+- `agentblaster selftest gui --browser chromium|chrome --headed`
+- `agentblaster selftest report --run <selftest-run-id> --format html,json,junit`
 
 ### Engine Adapters
 
@@ -406,7 +432,9 @@ Remote-provider benchmark rules:
 
 ### Application Quality And SDLC Test Harness
 
-AgentBlaster must include a testing harness for AgentBlaster itself. This is separate from the benchmark suites that AgentBlaster runs against inference engines.
+AgentBlaster must include a first-class testing harness for AgentBlaster itself. This is separate from the benchmark suites that AgentBlaster runs against inference engines, and it must be treated as a product requirement rather than an optional developer convenience.
+
+The app test harness must be available through documented CLI commands, CI workflows, and local developer workflows. It must verify that AgentBlaster's own adapters, orchestration, storage, reporting, dashboard, security controls, and packaging behave correctly before any benchmark result is trusted.
 
 The internal test harness must support a normal professional SDLC:
 
@@ -420,6 +448,8 @@ The internal test harness must support a normal professional SDLC:
 - Regression tests with stable fixture runs for canonical smoke, tool-call, structured-output, cache, and concurrency scenarios.
 - Cross-platform tests for macOS, Linux, and Windows behavior where feasible.
 - Packaging tests for source distributions, wheels, optional extras, CLI entrypoints, and clean installs.
+- Static quality gates such as linting, type checks, dependency audits, license checks, and policy-as-code checks where practical.
+- Release qualification checks that prove documentation examples, sample suites, dashboards, exports, and report bundles still work together.
 - Release validation that produces a reproducible test report for every tagged release.
 
 Testing principles:
@@ -434,9 +464,15 @@ Testing principles:
 Browser and GUI testing:
 
 - Use Playwright or an equivalent browser automation tool for repeatable CI GUI tests.
-- Leverage the Codex Chrome plugin for interactive GUI validation, authenticated/profile-dependent browser scenarios, and exploratory checks where the user's Chrome profile or extensions matter.
-- Chrome-plugin validation should complement CI automation, not replace deterministic CI tests.
+- Leverage the Chrome/Codex plugin, also referred to as the Codex Chrome plugin or Chrome plugin in this project, for interactive GUI validation, authenticated/profile-dependent browser scenarios, extension-sensitive flows, and exploratory dashboard checks where the user's Chrome profile matters.
+- Chrome/Codex plugin validation should complement CI automation, not replace deterministic CI tests; every plugin-assisted finding should be reproducible through a scripted test, fixture, or documented manual test case before it becomes a release gate.
 - GUI screenshots and exported reports produced during tests must use redacted fixture data.
+
+Quality artifacts:
+
+- The repository must include a documented test matrix, fixture strategy, and command taxonomy for fast, normal, slow, security, GUI, and release test tiers.
+- CI must publish machine-readable test results and preserve redacted GUI screenshots or traces only when they are useful for debugging failures.
+- The app test harness must track harness defects separately from benchmarked engine/model defects so AgentBlaster does not hide its own failures inside provider results.
 
 ### Test Case Format
 
@@ -923,7 +959,7 @@ Policy violations must fail closed with a clear error and an audit event.
 - Secret redaction for logs, traces, and reports.
 - `--no-raw-traces` run mode.
 - Localhost-only dashboard default if dashboard is enabled.
-- Internal unit, contract, and CLI test harness for AgentBlaster itself.
+- Internal unit, contract, CLI, security, packaging, and GUI test harness for AgentBlaster itself.
 - Mock provider fixtures for OpenAI-compatible and Anthropic-compatible contracts.
 
 ### MVP Should Have
@@ -939,7 +975,7 @@ Policy violations must fail closed with a clear error and an audit event.
 - DuckDB/Parquet export.
 - `agentblaster.policy.yaml` enforcement for provider allowlists, raw trace mode, dashboard binding, and host-tool execution.
 - Structured security audit log.
-- GUI E2E test harness using deterministic fixtures.
+- GUI E2E test harness using deterministic fixtures, with Chrome/Codex plugin-assisted dashboard checks for browser-dependent flows.
 - Chrome/Codex plugin validation checklist for dashboard flows that benefit from the user's real Chrome profile.
 
 ### MVP Could Have

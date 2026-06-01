@@ -1,0 +1,22 @@
+name: mcp-wide
+description: Wide deterministic MCP tool-catalog suite for prefill and schema pressure.
+cases:
+  - id: mcp-wide-tool-catalog
+    title: Large MCP catalog prompt pressure
+    prompt: Reply with exactly agentblaster-ok after reading the available MCP tool catalog.
+    expected_substring: agentblaster-ok
+    provenance: synthetic_representative
+    risk_level: low
+    mcp_profile: wide-mcp-32
+    metrics:
+      - ttft_ms
+      - cached_input_tokens
+      - cache_hit_ratio
+      - tokens_per_second_prefill
+      - tokens_per_second_decode
+    timeout_seconds: 60
+    max_tokens: 32
+    tags:
+      - mcp
+      - prefill
+      - tool-catalog

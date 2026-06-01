@@ -1,0 +1,20 @@
+name: streaming
+description: OpenAI-compatible streaming protocol smoke suite.
+cases:
+  - id: streaming-chat-text
+    title: Streaming chat text reconstruction
+    prompt: Stream a reply with exactly agentblaster-ok.
+    expected_substring: agentblaster-ok
+    streaming: true
+    provenance: synthetic_representative
+    risk_level: low
+    metrics:
+      - ttft_ms
+      - latency_ms
+      - tokens_per_second_decode
+    timeout_seconds: 30
+    max_tokens: 16
+    tags:
+      - protocol
+      - streaming
+      - chat

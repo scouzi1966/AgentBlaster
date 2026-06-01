@@ -1,0 +1,74 @@
+allowed_providers:
+  - afm
+  - mlx-lm
+  - ollama
+  - ollama-native
+  - lm-studio
+  - lm-studio-responses
+  - lm-studio-native
+  - omlx
+  - rapid-mlx
+  - vllm-mlx
+allowed_base_url_hosts:
+  - 127.0.0.1
+  - localhost
+allowed_metrics_url_hosts:
+  - 127.0.0.1
+  - localhost
+allowed_secret_ref_kinds:
+  - env
+  - keyring
+allow_remote_providers: false
+require_api_key_for_remote_providers: true
+allow_full_raw_traces: false
+allow_insecure_tls: false
+allow_tool_schemas: true
+# Set allowed_tool_names to restrict benchmark-provided API tool schemas by function name.
+# allowed_tool_names:
+#   - search_docs
+allow_simulated_tools: true
+allowed_simulated_tools:
+  - search_docs
+  - read_file_fixture
+  - shell_fixture
+  - browser_fetch_fixture
+  - mcp_echo
+allow_mcp_profiles: true
+allowed_mcp_profiles:
+  - fixture-mcp
+  - wide-mcp-32
+allow_skills: true
+allowed_skills:
+  - repo-triage
+  - safe-tool-replay
+  - agent-planning
+  - large-prefix-diagnostic
+require_max_tool_calls_for_tool_cases: false
+max_tool_calls_per_case: 8
+allowed_case_provenance:
+  - synthetic_representative
+  - internal_regression
+  - customer_trace_sanitized
+  - primary_source
+  - public_benchmark_adapted
+allowed_case_risk_levels:
+  - low
+  - medium
+allow_high_risk_cases: false
+require_source_url_for_external_cases: true
+require_license_for_external_cases: true
+max_concurrency: 8
+max_cases: 500
+max_matrix_runs: 25
+max_matrix_total_cases: 2500
+max_output_tokens: 4096
+max_timeout_seconds: 600
+# Enable only for providers with cost_model configured.
+# max_estimated_matrix_cost_usd: 25.0
+allowed_dashboard_hosts:
+  - 127.0.0.1
+  - localhost
+allowed_dashboard_ports:
+  - 8765
+allow_dashboard_non_loopback: false
+require_dashboard_auth: true
