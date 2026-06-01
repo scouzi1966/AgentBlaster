@@ -56,21 +56,31 @@ cases:
     with ZipFile(path) as archive:
         names = sorted(archive.namelist())
         assert names == [
+            "catalogs/lcp-profiles.json",
             "catalogs/mcp-profiles.json",
             "catalogs/simulated-tools.json",
             "catalogs/skills.json",
+            "harness-review.json",
             "manifest.json",
             "policy.yaml",
             "release-provenance.json",
             "suite-audit.json",
         ]
         manifest = json.loads(archive.read("manifest.json"))
+        harness_review = json.loads(archive.read("harness-review.json"))
         suite_audit = json.loads(archive.read("suite-audit.json"))
+        lcp_profiles = json.loads(archive.read("catalogs/lcp-profiles.json"))
+        mcp_profiles = json.loads(archive.read("catalogs/mcp-profiles.json"))
         simulated_tools = json.loads(archive.read("catalogs/simulated-tools.json"))
     assert manifest["schema"] == "agentblaster.evidence-bundle"
     assert manifest["security"]["contains_raw_secrets"] is False
+    assert harness_review["schema_version"] == "agentblaster.harness-review.v1"
+    assert harness_review["safety"]["includes_prompts"] is False
     assert suite_audit["suite"] == "evidence-suite"
     assert suite_audit["capability_surfaces"]["simulated_tools"] == ["search_docs"]
+    assert lcp_profiles["catalog"] == "agentblaster.lcp-profiles"
+    assert any(item["name"] == "fixture-lcp" for item in lcp_profiles["items"])
+    assert all(item["deterministic_result_support"] is True for item in mcp_profiles["items"])
     assert simulated_tools["catalog"] == "agentblaster.simulated-tools"
 
 
@@ -98,18 +108,22 @@ dependencies = []
 [build-system]
 requires = ["hatchling"]
 """.strip()
-        + "
-",
+        + "\n",
         encoding="utf-8",
     )
-    (project_root / "README.md").write_text("# AgentBlaster
-", encoding="utf-8")
-    (project_root / "src" / "agentblaster" / "__init__.py").write_text('__version__ = "0.1.0"
-', encoding="utf-8")
+    (project_root / "README.md").write_text("# AgentBlaster\n", encoding="utf-8")
+    (project_root / "src" / "agentblaster" / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
     policy_path = tmp_path / "agentblaster.policy.yaml"
-    policy_path.write_text("allow_remote_providers: true
-require_api_key_for_remote_providers: true
-", encoding="utf-8")
+    policy_path.write_text(
+        "\n".join(
+            [
+                "allow_remote_providers: true",
+                "require_api_key_for_remote_providers: true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     path = create_evidence_bundle(
         output_dir=tmp_path / "evidence",
@@ -126,5 +140,7 @@ require_api_key_for_remote_providers: true
         provider_audit = json.loads(archive.read("provider-audit.json"))
     assert manifest["includes_provider_audit"] is True
     assert manifest["security"]["contains_redacted_provider_audit"] is True
+    assert provider_audit["schema_version"] == "agentblaster.provider-audit.v1"
     assert provider_audit["providers"][0]["name"] == "remote-gateway"
     assert provider_audit["providers"][0]["api_key_ref_kind"] is None
+    assert provider_audit["providers"][0]["api_key_ref_writable_backend"] is False

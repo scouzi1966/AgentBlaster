@@ -13,8 +13,8 @@ SECRET_HEADER_NAMES = {
 }
 
 SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9_\-]{16,}"),
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{16,}"),
+    re.compile(r"sk-(?!ant-)[A-Za-z0-9_\-]{16,}"),
     re.compile(r"gh[opusr]_[A-Za-z0-9_]{16,}"),
     re.compile(r"Bearer\s+[A-Za-z0-9._\-]{16,}", re.IGNORECASE),
 ]

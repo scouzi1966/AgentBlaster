@@ -12,7 +12,45 @@ from agentblaster.suites import BUILTIN_SUITES
 
 
 RECOMMENDED_MODEL_TARGETS = ("qwen3.6-27b-dense", "gemma-4-31b-dense")
-RECOMMENDED_BASELINE_SUITES = ("smoke", "structured", "toolcall", "toolsim", "trace-replay", "prefill", "cache-control")
+RECOMMENDED_BASELINE_SUITES = (
+    "smoke",
+    "structured",
+    "toolcall",
+    "toolsim",
+    "agentic-tool-loop",
+    "trace-replay",
+    "agent-fanout",
+    "prefill",
+    "cache-control",
+    "harness-engineering",
+    "cancellation",
+)
+REPRESENTATIVE_AGENT_PROFILES = ("opencode", "openclaw", "hermes", "pi")
+STANDARD_WORKFLOW_SURFACES = (
+    "openai-anthropic-tool-calling",
+    "mcp-fixtures",
+    "skill-packs",
+    "lcp-emerging",
+    "harness-engineering",
+)
+STANDARD_PREFILL_CHALLENGES = (
+    "large repeated system prompts",
+    "large tool schemas and deterministic MCP catalogs",
+    "skill-pack and LCP context prefixes",
+    "prompt-cache reuse, suffix mutation, and invalidation behavior",
+)
+STANDARD_CONCURRENCY_CHALLENGES = (
+    "agent fan-out bursts",
+    "subagent and tool-loop scheduling",
+    "queue fairness under repeated static prefixes",
+    "cancellation isolation for long-running local requests",
+)
+STANDARD_STATS_CLAIM_POLICY = (
+    "Use contract-conformant OpenAI or Anthropic responses for baseline compatibility comparisons.",
+    "Use harness-measured latency, TTFT, cancellation, and tool-loop validators when provider-native stats are absent.",
+    "Use native telemetry only through an explicit telemetry profile and metric coverage claim contract.",
+    "Record unsupported native metrics as null or unsupported; do not infer publishable native prefill/cache stats.",
+)
 
 
 @dataclass(frozen=True)
@@ -77,7 +115,15 @@ ENGINE_TARGETS: tuple[EngineTarget, ...] = (
         contracts=("openai",),
         telemetry_profiles=("mlx-lm-openai-compatible",),
         recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
-        recommended_suites=("smoke", "structured", "toolcall", "prefill", "cache-control"),
+        recommended_suites=(
+            "smoke",
+            "structured",
+            "toolcall",
+            "agent-fanout",
+            "prefill",
+            "cache-control",
+            "harness-engineering",
+        ),
         comparison_axes=(
             "OpenAI-compatible baseline behavior",
             "large prefix handling",
@@ -128,7 +174,15 @@ ENGINE_TARGETS: tuple[EngineTarget, ...] = (
         contracts=("openai",),
         telemetry_profiles=("rapid-mlx-openai-compatible",),
         recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
-        recommended_suites=("smoke", "structured", "toolcall", "prefill", "cache-control"),
+        recommended_suites=(
+            "smoke",
+            "structured",
+            "toolcall",
+            "agent-fanout",
+            "prefill",
+            "cache-control",
+            "harness-engineering",
+        ),
         comparison_axes=(
             "OpenAI-compatible contract fidelity",
             "prefill and cache diagnostics when optional stats are exposed",
@@ -150,9 +204,17 @@ ENGINE_TARGETS: tuple[EngineTarget, ...] = (
         provider_presets=("omlx",),
         launch_recipes=("omlx",),
         contracts=("openai",),
-        telemetry_profiles=("generic-openai-chat",),
+        telemetry_profiles=("omlx-openai-compatible",),
         recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
-        recommended_suites=("smoke", "structured", "toolcall", "prefill", "cache-control"),
+        recommended_suites=(
+            "smoke",
+            "structured",
+            "toolcall",
+            "agent-fanout",
+            "prefill",
+            "cache-control",
+            "harness-engineering",
+        ),
         comparison_axes=(
             "OpenAI-compatible contract fidelity",
             "large system prompt behavior",
@@ -167,14 +229,49 @@ ENGINE_TARGETS: tuple[EngineTarget, ...] = (
         security_notes=("Loopback endpoint by default", "No benchmark case should execute host tools"),
     ),
     EngineTarget(
+        id="vllm-mlx",
+        display_name="vLLM-MLX",
+        lifecycle="candidate-local",
+        platform_focus="macOS Apple Silicon MLX-backed vLLM-compatible local server exposed through OpenAI-compatible and Anthropic-compatible HTTP.",
+        provider_presets=("vllm-mlx", "vllm-mlx-anthropic"),
+        launch_recipes=("vllm-mlx", "vllm-mlx-anthropic"),
+        contracts=("openai", "anthropic"),
+        telemetry_profiles=("generic-openai-chat", "anthropic-messages"),
+        recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
+        recommended_suites=(
+            "smoke",
+            "structured",
+            "toolcall",
+            "agent-fanout",
+            "prefill",
+            "cache-control",
+            "harness-engineering",
+        ),
+        comparison_axes=(
+            "OpenAI-compatible server behavior under local MLX-backed serving",
+            "prefill sensitivity for long repeated system and tool prompts",
+            "batching, queueing, and concurrency scaling under agent fanout",
+        ),
+        readiness_checks=(
+            "Confirm the installed vLLM-MLX package, entrypoint, and supported model artifact format",
+            "Run provider contract check before matrix inclusion",
+            "Record missing native stats as unavailable until vLLM-MLX exposes a stable local stats schema",
+        ),
+        risk_notes=(
+            "vLLM-MLX packaging and CLI flags may vary by upstream version.",
+            "Telemetry should remain generic OpenAI-compatible until native MLX/vLLM timing fields are standardized.",
+        ),
+        security_notes=("Loopback endpoint by default", "No API key expected unless wrapped by a gateway"),
+    ),
+    EngineTarget(
         id="lm-studio",
         display_name="LM Studio",
         lifecycle="external-local",
         platform_focus="Cross-platform desktop/local server with OpenAI-compatible, Responses-compatible, and optional native surfaces.",
-        provider_presets=("lm-studio", "lm-studio-responses", "lm-studio-native"),
-        launch_recipes=("lm-studio", "lm-studio-responses", "lm-studio-native"),
-        contracts=("openai", "openai-responses", "native"),
-        telemetry_profiles=("generic-openai-chat", "openai-responses", "lm-studio-native"),
+        provider_presets=("lm-studio", "lm-studio-responses", "lm-studio-anthropic", "lm-studio-native"),
+        launch_recipes=("lm-studio", "lm-studio-responses", "lm-studio-anthropic", "lm-studio-native"),
+        contracts=("openai", "openai-responses", "anthropic", "native"),
+        telemetry_profiles=("generic-openai-chat", "openai-responses", "anthropic-messages", "lm-studio-native"),
         recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
         recommended_suites=RECOMMENDED_BASELINE_SUITES,
         comparison_axes=(
@@ -203,14 +300,22 @@ ENGINE_TARGETS: tuple[EngineTarget, ...] = (
         contracts=("openai", "openai-responses"),
         telemetry_profiles=("generic-openai-chat", "openai-responses"),
         recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
-        recommended_suites=("smoke", "structured", "toolcall", "toolsim", "trace-replay"),
+        recommended_suites=(
+            "smoke",
+            "structured",
+            "toolcall",
+            "toolsim",
+            "trace-replay",
+            "agent-fanout",
+            "harness-engineering",
+        ),
         comparison_axes=(
             "contract and tool-call compatibility",
             "remote budget and rate-limit policy behavior",
             "usage accounting comparability",
         ),
         readiness_checks=(
-            "Store API key through environment or optional OS keyring reference",
+            "Store API key through environment, optional OS keyring, or explicit dotenv fallback reference",
             "Require explicit remote policy before dispatch",
             "Configure cost model and rate limits before non-smoke runs",
         ),
@@ -230,14 +335,14 @@ ENGINE_TARGETS: tuple[EngineTarget, ...] = (
         contracts=("anthropic",),
         telemetry_profiles=("anthropic-messages",),
         recommended_model_targets=RECOMMENDED_MODEL_TARGETS,
-        recommended_suites=("smoke", "toolcall", "toolsim", "trace-replay", "cache-control"),
+        recommended_suites=("smoke", "toolcall", "toolsim", "trace-replay", "agent-fanout", "cache-control", "cancellation"),
         comparison_axes=(
             "Anthropic tool envelope compatibility",
             "cache read/write token accounting",
             "remote budget and rate-limit policy behavior",
         ),
         readiness_checks=(
-            "Store API key through environment or optional OS keyring reference",
+            "Store API key through environment, optional OS keyring, or explicit dotenv fallback reference",
             "Require explicit remote policy before dispatch",
             "Run cache-control only with reviewed cost and retention settings",
         ),
@@ -262,6 +367,44 @@ def get_engine_target(target_id: str) -> dict[str, Any]:
     raise ConfigError(f"unknown engine target: {target_id}; available targets: {available}")
 
 
+def get_engine_target_for_provider(provider_name: str) -> dict[str, Any] | None:
+    """Return the engine target associated with a known provider preset or target id."""
+
+    normalized = provider_name.strip()
+    if not normalized:
+        return None
+    for target in ENGINE_TARGETS:
+        if normalized == target.id or normalized in target.provider_presets:
+            return engine_target_payload(target)
+    return None
+
+
+def compact_engine_target_for_provider(provider_name: str) -> dict[str, Any] | None:
+    target = get_engine_target_for_provider(provider_name)
+    if target is None:
+        return None
+    standardization = target["standardization"]
+    return {
+        "id": target["id"],
+        "display_name": target["display_name"],
+        "lifecycle": target["lifecycle"],
+        "contracts": target["contracts"],
+        "telemetry_profiles": target["telemetry_profiles"],
+        "recommended_model_targets": target["recommended_model_targets"],
+        "recommended_suites": target["recommended_suites"],
+        "standardization": {
+            "primary_scoring_contract": standardization["primary_scoring_contract"],
+            "contract_priority": standardization["contract_priority"],
+            "workflow_surfaces": standardization["workflow_surfaces"],
+            "representative_agent_profiles": standardization["representative_agent_profiles"],
+            "prefill_challenges": standardization["prefill_challenges"],
+            "concurrency_challenges": standardization["concurrency_challenges"],
+            "native_telemetry_profiles": standardization["native_telemetry_profiles"],
+            "native_metrics_policy": standardization["native_metrics_policy"],
+        },
+    }
+
+
 def engine_target_catalog() -> dict[str, Any]:
     targets = list_engine_targets()
     return {
@@ -269,6 +412,15 @@ def engine_target_catalog() -> dict[str, Any]:
         "boundary": "Engine targets are static benchmark planning metadata; they do not prove an engine is installed, reachable, or compatible.",
         "recommended_model_targets": list(RECOMMENDED_MODEL_TARGETS),
         "recommended_baseline_suites": list(RECOMMENDED_BASELINE_SUITES),
+        "representative_agent_profiles": list(REPRESENTATIVE_AGENT_PROFILES),
+        "standard_workflow_surfaces": list(STANDARD_WORKFLOW_SURFACES),
+        "standardization": {
+            "baseline_contract_policy": "OpenAI-compatible Chat remains the primary cross-engine baseline when available; Responses, Anthropic, and native contracts are measured as explicit additional surfaces.",
+            "prefill_challenges": list(STANDARD_PREFILL_CHALLENGES),
+            "concurrency_challenges": list(STANDARD_CONCURRENCY_CHALLENGES),
+            "stats_claim_policy": list(STANDARD_STATS_CLAIM_POLICY),
+            "agent_profile_baseline": list(REPRESENTATIVE_AGENT_PROFILES),
+        },
         "targets": targets,
         "summary": {
             "target_count": len(targets),
@@ -309,6 +461,9 @@ def format_engine_target_catalog(markdown: bool = False) -> str:
                     f"- Provider presets: {', '.join(f'`{item}`' for item in target['provider_presets']) or '`none`'}",
                     f"- Launch recipes: {', '.join(f'`{item}`' for item in target['launch_recipes']) or '`none`'}",
                     f"- Telemetry profiles: {', '.join(f'`{item}`' for item in target['telemetry_profiles'])}",
+                    f"- Primary scoring contract: `{target['standardization']['primary_scoring_contract']}`",
+                    f"- Workflow surfaces: {', '.join(f'`{item}`' for item in target['standardization']['workflow_surfaces'])}",
+                    f"- Agent profiles: {', '.join(f'`{item}`' for item in target['standardization']['representative_agent_profiles'])}",
                     f"- Recommended suites: {', '.join(f'`{item}`' for item in target['recommended_suites'])}",
                     "- Readiness checks: " + "; ".join(target["readiness_checks"]),
                     "- Risk notes: " + "; ".join(target["risk_notes"]),
@@ -338,11 +493,47 @@ def engine_target_payload(target: EngineTarget) -> dict[str, Any]:
     payload["risk_notes"] = list(target.risk_notes)
     payload["security_notes"] = list(target.security_notes)
     payload["remote_contract"] = target.lifecycle == "remote-contract"
+    payload["standardization"] = _target_standardization(target)
     payload["preset_coverage"] = _coverage(target.provider_presets, set(PROVIDER_PRESETS))
     payload["launch_recipe_coverage"] = _coverage(target.launch_recipes, {recipe.engine for recipe in list_launch_recipe_templates()})
     payload["model_target_coverage"] = _coverage(target.recommended_model_targets, set(MODEL_TARGETS))
     payload["suite_coverage"] = _coverage(target.recommended_suites, set(BUILTIN_SUITES))
     return payload
+
+
+def _target_standardization(target: EngineTarget) -> dict[str, Any]:
+    primary_scoring_contract = _primary_scoring_contract(target)
+    native_profiles = tuple(profile for profile in target.telemetry_profiles if profile.endswith("-native") or profile in {"ollama-native", "lm-studio-native"})
+    return {
+        "primary_scoring_contract": primary_scoring_contract,
+        "contract_priority": list(_contract_priority(target, primary_scoring_contract)),
+        "workflow_surfaces": list(STANDARD_WORKFLOW_SURFACES),
+        "representative_agent_profiles": list(REPRESENTATIVE_AGENT_PROFILES),
+        "prefill_challenges": list(STANDARD_PREFILL_CHALLENGES),
+        "concurrency_challenges": list(STANDARD_CONCURRENCY_CHALLENGES),
+        "stats_claim_policy": list(STANDARD_STATS_CLAIM_POLICY),
+        "native_telemetry_profiles": list(native_profiles),
+        "native_metrics_policy": _native_metrics_policy(native_profiles),
+        "security_boundary": "static planning metadata only; no launches, probes, provider calls, model-cache reads, or secret reads",
+    }
+
+
+def _primary_scoring_contract(target: EngineTarget) -> str:
+    if "openai" in target.contracts:
+        return "openai"
+    return target.contracts[0] if target.contracts else "none"
+
+
+def _contract_priority(target: EngineTarget, primary_scoring_contract: str) -> tuple[str, ...]:
+    ordered = [primary_scoring_contract]
+    ordered.extend(contract for contract in target.contracts if contract != primary_scoring_contract)
+    return tuple(ordered)
+
+
+def _native_metrics_policy(native_profiles: tuple[str, ...]) -> str:
+    if native_profiles:
+        return "Native stats may support publication claims only through the listed telemetry profiles and metric coverage claim contract."
+    return "Native stats are not assumed; publish harness-measured and contract usage metrics unless a future explicit telemetry profile is added."
 
 
 def _coverage(items: tuple[str, ...], available: set[str]) -> dict[str, Any]:

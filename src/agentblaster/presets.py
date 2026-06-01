@@ -39,24 +39,69 @@ class ProviderPreset(BaseModel):
         )
 
 
+OPENAI_AGENTIC_LOCAL_CAPABILITIES = {
+    "streaming": True,
+    "structured_output": True,
+    "judge_rubric": True,
+    "tool_calling": True,
+    "tool_loop": True,
+    "trace_replay": True,
+    "cancellation": True,
+}
+
+OPENAI_CHAT_LOCAL_CAPABILITIES = {
+    "streaming": True,
+    "trace_replay": True,
+    "cancellation": True,
+}
+
+OPENAI_RESPONSES_LOCAL_CAPABILITIES = {
+    "streaming": True,
+    "structured_output": True,
+    "judge_rubric": True,
+    "tool_calling": True,
+    "tool_loop": True,
+    "trace_replay": True,
+    "responses_api": True,
+    "cancellation": True,
+}
+
+ANTHROPIC_LOCAL_CAPABILITIES = {
+    "streaming": True,
+    "tool_calling": True,
+    "tool_loop": True,
+    "trace_replay": True,
+    "cancellation": True,
+}
+
+NATIVE_LOCAL_CAPABILITIES = {
+    "streaming": True,
+    "trace_replay": True,
+    "cancellation": True,
+}
+
+
 LOCAL_ENGINE_PRESETS: dict[str, ProviderPreset] = {
     "afm": ProviderPreset(
         name="afm",
         description="AFM OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:9999/v1",
+        capabilities=OPENAI_AGENTIC_LOCAL_CAPABILITIES,
     ),
     "mlx-lm": ProviderPreset(
         name="mlx-lm",
         description="mlx-lm OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:8080/v1",
+        capabilities=OPENAI_CHAT_LOCAL_CAPABILITIES,
     ),
     "ollama": ProviderPreset(
         name="ollama",
         description="Ollama OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:11434/v1",
+        capabilities=OPENAI_CHAT_LOCAL_CAPABILITIES,
     ),
     "ollama-native": ProviderPreset(
         name="ollama-native",
@@ -64,18 +109,29 @@ LOCAL_ENGINE_PRESETS: dict[str, ProviderPreset] = {
         contract=ApiContract.NATIVE,
         base_url="http://127.0.0.1:11434",
         native_adapter="ollama",
+        capabilities=NATIVE_LOCAL_CAPABILITIES,
     ),
     "lm-studio": ProviderPreset(
         name="lm-studio",
         description="LM Studio OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:1234/v1",
+        capabilities=OPENAI_AGENTIC_LOCAL_CAPABILITIES,
     ),
     "lm-studio-responses": ProviderPreset(
         name="lm-studio-responses",
         description="LM Studio OpenAI Responses-compatible local server",
         contract=ApiContract.OPENAI_RESPONSES,
         base_url="http://127.0.0.1:1234/v1",
+        capabilities=OPENAI_RESPONSES_LOCAL_CAPABILITIES,
+    ),
+    "lm-studio-anthropic": ProviderPreset(
+        name="lm-studio-anthropic",
+        description="LM Studio Anthropic Messages-compatible local server",
+        contract=ApiContract.ANTHROPIC,
+        base_url="http://127.0.0.1:1234/v1",
+        headers={"anthropic-version": "2023-06-01"},
+        capabilities=ANTHROPIC_LOCAL_CAPABILITIES,
     ),
     "lm-studio-native": ProviderPreset(
         name="lm-studio-native",
@@ -83,24 +139,36 @@ LOCAL_ENGINE_PRESETS: dict[str, ProviderPreset] = {
         contract=ApiContract.NATIVE,
         base_url="http://127.0.0.1:1234",
         native_adapter="lm-studio",
+        capabilities=NATIVE_LOCAL_CAPABILITIES,
     ),
     "omlx": ProviderPreset(
         name="omlx",
         description="oMLX OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:8000/v1",
+        capabilities=OPENAI_AGENTIC_LOCAL_CAPABILITIES,
     ),
     "rapid-mlx": ProviderPreset(
         name="rapid-mlx",
         description="Rapid-MLX OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:8000/v1",
+        capabilities=OPENAI_AGENTIC_LOCAL_CAPABILITIES,
     ),
     "vllm-mlx": ProviderPreset(
         name="vllm-mlx",
         description="vLLM-MLX OpenAI-compatible local server",
         contract=ApiContract.OPENAI,
         base_url="http://127.0.0.1:8000/v1",
+        capabilities=OPENAI_AGENTIC_LOCAL_CAPABILITIES,
+    ),
+    "vllm-mlx-anthropic": ProviderPreset(
+        name="vllm-mlx-anthropic",
+        description="vLLM-MLX Anthropic Messages-compatible local server",
+        contract=ApiContract.ANTHROPIC,
+        base_url="http://127.0.0.1:8000/v1",
+        headers={"anthropic-version": "2023-06-01"},
+        capabilities=ANTHROPIC_LOCAL_CAPABILITIES,
     ),
 }
 

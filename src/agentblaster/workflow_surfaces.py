@@ -23,6 +23,7 @@ class WorkflowSurface:
     benchmark_dimensions: tuple[str, ...]
     safety_controls: tuple[str, ...]
     artifacts: tuple[str, ...] = ()
+    capability_requirements: tuple[str, ...] = ()
 
 
 WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
@@ -50,6 +51,7 @@ WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
             "Enterprise policy can allowlist tools and cap declared tool-loop depth.",
         ),
         artifacts=("SAFE_TOOL_SCHEMAS", "ToolCallRecord", "SimulatedToolResult"),
+        capability_requirements=("tool_calling", "tool_loop"),
     ),
     WorkflowSurface(
         id="mcp-fixtures",
@@ -74,6 +76,7 @@ WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
             "Policy can block MCP profiles or require explicit allowlists.",
         ),
         artifacts=("fixture-mcp", "wide-mcp-32"),
+        capability_requirements=("tool_calling", "mcp_profile"),
     ),
     WorkflowSurface(
         id="skill-packs",
@@ -98,11 +101,12 @@ WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
             "Prompt footprint tools expose the added token/character pressure before dispatch.",
         ),
         artifacts=("repo-triage", "safe-tool-replay", "agent-planning", "large-prefix-diagnostic"),
+        capability_requirements=("skills",),
     ),
     WorkflowSurface(
         id="lcp-emerging",
         family="lcp",
-        stability="emerging-fixture",
+        stability="emerging",
         purpose="Exercise fixture-only local context protocol style workflows: scoped context bundles, session-local memory, and retrieval/context attachment metadata.",
         host_execution=False,
         deterministic=True,
@@ -123,12 +127,13 @@ WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
             "Enterprise policies should require explicit opt-in before real local context providers are connected.",
         ),
         artifacts=("fixture-lcp", "wide-lcp-context", "lcp-context"),
+        capability_requirements=("lcp_context",),
     ),
     WorkflowSurface(
         id="harness-engineering",
         family="harness-engineering",
         stability="experimental",
-        purpose="Support benchmark-method research such as contract fuzzing, metamorphic variants, cache replay, and concurrency/prefill stress profiles.",
+        purpose="Support benchmark-method research such as contract fuzzing, metamorphic variants, cache replay, judge rubrics, orchestration, and concurrency/prefill stress profiles.",
         host_execution=False,
         deterministic=True,
         contract_surfaces=(
@@ -139,7 +144,9 @@ WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
         benchmark_dimensions=(
             "contract robustness",
             "semantic-preservation sensitivity",
-            "prompt-cache reuse and invalidation",
+            "cache replay and prompt-cache reuse/invalidation",
+            "multi-tool routing and distractor-tool resistance",
+            "model-judge rubric discipline",
             "concurrency fairness",
         ),
         safety_controls=(
@@ -147,7 +154,17 @@ WORKFLOW_SURFACES: tuple[WorkflowSurface, ...] = (
             "Harness profiles do not call providers during generation.",
             "Calibration gates can reject unstable generated suites before publication.",
         ),
-        artifacts=("prefill", "concurrency", "contract-fuzz", "metamorphic", "cache-replay"),
+        artifacts=("prefill", "concurrency", "contract-fuzz", "metamorphic", "cache-replay", "orchestration", "judge-rubric"),
+        capability_requirements=(
+            "streaming",
+            "cancellation",
+            "structured_output",
+            "judge_rubric",
+            "prompt_caching",
+            "tool_calling",
+            "tool_loop",
+            "trace_replay",
+        ),
     ),
 )
 
@@ -220,6 +237,7 @@ def _surface_payload(surface: WorkflowSurface) -> dict[str, Any]:
     payload["benchmark_dimensions"] = list(surface.benchmark_dimensions)
     payload["safety_controls"] = list(surface.safety_controls)
     payload["artifacts"] = list(surface.artifacts)
+    payload["capability_requirements"] = list(surface.capability_requirements)
     if surface.id == "openai-anthropic-tool-calling":
         payload["simulated_tools"] = _simulated_tool_summary()
     elif surface.id == "mcp-fixtures":

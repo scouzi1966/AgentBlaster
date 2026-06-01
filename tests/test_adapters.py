@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 
+import agentblaster.adapters as adapters_module
 from agentblaster.adapters import (
     AnthropicCompatibleAdapter,
     LMStudioNativeAdapter,
@@ -104,6 +105,88 @@ def test_openai_smoke_chat_posts_chat_completion(monkeypatch) -> None:
     assert response.text == "agentblaster-ok"
 
 
+def test_probe_failure_messages_redact_secret_echoes(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_TEST_KEY", "sk-secret-that-should-not-leak-1234567890")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            text="denied Authorization: Bearer sk-secret-that-should-not-leak-1234567890",
+            headers={"content-type": "text/plain"},
+        )
+
+    provider = ProviderConfig(
+        name="openai-like",
+        contract=ApiContract.OPENAI,
+        base_url="https://example.com/v1",
+        api_key_ref=SecretRef(kind="env", name="OPENAI_TEST_KEY"),
+        remote=True,
+    )
+    adapter = OpenAICompatibleAdapter(
+        provider,
+        secrets=SecretResolver([EnvironmentSecretStore()]),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = adapter.probe()
+
+    assert result.ok is False
+    assert "sk-secret" not in result.message
+    assert "Bearer [REDACTED]" in result.message
+
+
+def test_openai_chat_completion_preserves_safe_http_metadata_for_json_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "agentblaster-ok"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+            },
+            headers={
+                "content-type": "application/problem+json; charset=utf-8",
+                "x-request-id": "req_123",
+                "authorization": "Bearer should-not-render",
+            },
+        )
+
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    adapter = OpenAICompatibleAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    response = adapter.smoke_chat("qwen-test")
+
+    assert response.raw["usage"]["prompt_tokens"] == 5
+    assert response.raw["agentblaster_http"]["status_code"] == 200
+    assert response.raw["agentblaster_http"]["content_type"] == "application/problem+json; charset=utf-8"
+    assert response.raw["agentblaster_http"]["headers"] == {"x-request-id": "req_123"}
+
+
+def test_openai_chat_completion_preserves_redacted_non_json_error_metadata() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            502,
+            text="upstream gateway failed with token sk-should-not-render",
+            headers={
+                "content-type": "text/plain",
+                "retry-after": "2",
+                "set-cookie": "session=should-not-render",
+            },
+        )
+
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    adapter = OpenAICompatibleAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    case = BenchmarkCase(id="errorcase", title="error case", prompt="hello")
+
+    response = adapter.chat_completion("qwen-test", case)
+
+    assert response.status_code == 502
+    assert response.raw["agentblaster_non_json_response"] is True
+    assert response.raw["agentblaster_http"]["status_code"] == 502
+    assert response.raw["agentblaster_http"]["headers"] == {"retry-after": "2"}
+    assert "sk-should-not-render" not in response.raw["agentblaster_body_preview"]
+    assert "set-cookie" not in response.raw["agentblaster_http"]["headers"]
+
+
 def test_openai_chat_completion_sends_tools_and_response_format() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json_loads_request(request)
@@ -187,6 +270,35 @@ def test_openai_chat_completion_replays_explicit_trace_messages() -> None:
     assert response.text == "agentblaster-ok"
 
 
+def test_openai_chat_completion_preserves_injected_system_prompt_for_trace_messages() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json_loads_request(request)
+        assert [message["role"] for message in payload["messages"]] == [
+            "system",
+            "system",
+            "user",
+            "assistant",
+            "tool",
+            "user",
+        ]
+        assert payload["messages"][0]["content"] == "Injected skill and LCP prefix."
+        assert payload["messages"][1]["content"] == "Trace policy."
+        assert "fallback prompt" not in str(payload["messages"])
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "agentblaster-ok"}}]},
+            headers={"content-type": "application/json"},
+        )
+
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    adapter = OpenAICompatibleAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    case = trace_replay_case().model_copy(update={"system_prompt": "Injected skill and LCP prefix."})
+
+    response = adapter.chat_completion("qwen-test", case)
+
+    assert response.text == "agentblaster-ok"
+
+
 def test_openai_chat_completion_streams_text_and_ttft() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json_loads_request(request)
@@ -223,6 +335,48 @@ def test_openai_chat_completion_streams_text_and_ttft() -> None:
     assert response.ttft_ms is not None
     assert response.raw["stream"] is True
     assert len(response.raw["events"]) == 3
+
+
+def test_openai_chat_completion_stream_can_cancel(monkeypatch) -> None:
+    ticks = iter([0.0, 0.0, 0.02, 0.02, 0.02])
+
+    def fake_perf_counter() -> float:
+        return next(ticks, 0.02)
+
+    monkeypatch.setattr(adapters_module, "perf_counter", fake_perf_counter)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json_loads_request(request)
+        assert payload["stream"] is True
+        body = "\n".join(
+            [
+                'data: {"choices":[{"delta":{"role":"assistant"}}]}',
+                'data: {"choices":[{"delta":{"content":"partial"}}]}',
+                'data: {"choices":[{"delta":{"content":"should-not-be-required"}}]}',
+                "data: [DONE]",
+                "",
+            ]
+        )
+        return httpx.Response(200, content=body.encode("utf-8"), headers={"content-type": "text/event-stream"})
+
+    provider = ProviderConfig(name="openai-like", contract=ApiContract.OPENAI, base_url="https://example.com/v1")
+    adapter = OpenAICompatibleAdapter(provider, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    case = BenchmarkCase(
+        id="cancel-stream",
+        title="cancel stream",
+        prompt="Stream until canceled.",
+        streaming=True,
+        cancel_after_ms=10,
+    )
+
+    response = adapter.chat_completion("qwen-test", case)
+
+    assert response.streaming is True
+    assert response.canceled is True
+    assert response.cancellation_latency_ms == 20.0
+    assert response.raw["agentblaster_cancelled"] is True
+    assert response.raw["cancel_after_ms"] == 10
+    assert response.text == "partial"
 
 
 def test_openai_chat_completion_streams_tool_call_fragments() -> None:
@@ -851,6 +1005,20 @@ def test_adapter_for_resolves_openai_responses_adapter() -> None:
     )
 
     assert isinstance(adapter_for(provider), OpenAIResponsesAdapter)
+
+
+def test_adapter_for_preserves_injected_http_client() -> None:
+    provider = ProviderConfig(
+        name="openai-injected-client",
+        contract=ApiContract.OPENAI,
+        base_url="http://example.com/v1",
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": []})))
+
+    adapter = adapter_for(provider, client=client)
+
+    assert isinstance(adapter, OpenAICompatibleAdapter)
+    assert adapter.client is client
 
 
 def test_adapter_for_resolves_lmstudio_native_adapter() -> None:

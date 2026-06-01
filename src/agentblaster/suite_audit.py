@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 import json
 from typing import Any
 
@@ -9,6 +10,7 @@ from agentblaster.models import BenchmarkCase, SuiteDefinition
 
 
 EXTERNAL_PROVENANCE = {"primary_source", "public_benchmark_adapted"}
+SUITE_AUDIT_SCHEMA_VERSION = "agentblaster.suite-audit.v1"
 
 
 class SuiteAuditFinding(BaseModel):
@@ -27,6 +29,7 @@ class SuiteAuditReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: str = SUITE_AUDIT_SCHEMA_VERSION
     suite: str
     description: str = ""
     total_cases: int = Field(ge=0)
@@ -34,6 +37,7 @@ class SuiteAuditReport(BaseModel):
     risk_counts: dict[str, int] = Field(default_factory=dict)
     scenario_counts: dict[str, int] = Field(default_factory=dict)
     capability_surfaces: dict[str, Any] = Field(default_factory=dict)
+    dataset_hygiene: dict[str, Any] = Field(default_factory=dict)
     findings: list[SuiteAuditFinding] = Field(default_factory=list)
     security_notes: list[str] = Field(default_factory=list)
 
@@ -49,7 +53,9 @@ def audit_suite(suite: SuiteDefinition) -> SuiteAuditReport:
     skills: set[str] = set()
     response_format_cases = 0
     streaming_cases = 0
+    cancellation_cases = 0
     trace_replay_cases = 0
+    case_fingerprints: dict[str, list[str]] = {}
     findings: list[SuiteAuditFinding] = []
 
     for case in suite.cases:
@@ -102,8 +108,12 @@ def audit_suite(suite: SuiteDefinition) -> SuiteAuditReport:
             response_format_cases += 1
         if case.streaming:
             streaming_cases += 1
+        if case.cancel_after_ms is not None:
+            cancellation_cases += 1
         if case.messages:
             trace_replay_cases += 1
+        fingerprint = _case_content_fingerprint(case)
+        case_fingerprints.setdefault(fingerprint, []).append(case.id)
 
     for case_id in sorted(unnamed_tool_cases):
         findings.append(
@@ -112,6 +122,20 @@ def audit_suite(suite: SuiteDefinition) -> SuiteAuditReport:
                 case_id=case_id,
                 code="unnamed_tool_schema",
                 message=f"case {case_id} includes a tool schema without a function name",
+            )
+        )
+    duplicate_fingerprints = {
+        fingerprint: sorted(case_ids)
+        for fingerprint, case_ids in sorted(case_fingerprints.items())
+        if len(case_ids) > 1
+    }
+    for fingerprint, case_ids in duplicate_fingerprints.items():
+        findings.append(
+            SuiteAuditFinding(
+                severity="warning",
+                case_id=",".join(case_ids),
+                code="duplicate_case_fingerprint",
+                message=f"cases share duplicate workload fingerprint {fingerprint[:16]}",
             )
         )
 
@@ -133,7 +157,29 @@ def audit_suite(suite: SuiteDefinition) -> SuiteAuditReport:
             "skill_cases": sum(1 for case in suite.cases if case.skills),
             "response_format_cases": response_format_cases,
             "streaming_cases": streaming_cases,
+            "cancellation_cases": cancellation_cases,
             "trace_replay_cases": trace_replay_cases,
+        },
+        dataset_hygiene={
+            "case_fingerprint_count": len(case_fingerprints),
+            "duplicate_fingerprint_count": len(duplicate_fingerprints),
+            "duplicate_case_groups": [
+                {"fingerprint": fingerprint, "case_ids": case_ids}
+                for fingerprint, case_ids in duplicate_fingerprints.items()
+            ],
+            "fingerprint_inputs": [
+                "prompt",
+                "system_prompt",
+                "messages",
+                "tools",
+                "tool_choice",
+                "response_format",
+                "simulated_tools",
+                "mcp_profile",
+                "lcp_profile",
+                "skills",
+                "expected assertions",
+            ],
         },
         findings=findings,
         security_notes=[
@@ -155,6 +201,7 @@ def format_suite_audit(report: SuiteAuditReport) -> str:
         f"simulated_tools: {_format_list(report.capability_surfaces['simulated_tools'])}",
         f"mcp_profiles: {_format_list(report.capability_surfaces['mcp_profiles'])}",
         f"skills: {_format_list(report.capability_surfaces['skills'])}",
+        f"duplicate_fingerprints: {report.dataset_hygiene.get('duplicate_fingerprint_count', 0)}",
         f"findings: {len(report.findings)}",
     ]
     for finding in report.findings:
@@ -167,6 +214,27 @@ def format_suite_audit(report: SuiteAuditReport) -> str:
 
 def suite_audit_json(report: SuiteAuditReport) -> str:
     return json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+
+
+def _case_content_fingerprint(case: BenchmarkCase) -> str:
+    payload = {
+        "prompt": case.prompt,
+        "system_prompt": case.system_prompt,
+        "messages": [message.model_dump(mode="json") for message in case.messages],
+        "tools": case.tools,
+        "tool_choice": case.tool_choice,
+        "response_format": case.response_format,
+        "simulated_tools": sorted(case.simulated_tools),
+        "mcp_profile": case.mcp_profile,
+        "lcp_profile": case.lcp_profile,
+        "skills": sorted(case.skills),
+        "expected_substring": case.expected_substring,
+        "expected_json_fields": case.expected_json_fields,
+        "expected_tool_name": case.expected_tool_name,
+        "expected_tool_result_substring": case.expected_tool_result_substring,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _tool_schema_name(tool: dict[str, Any]) -> str | None:

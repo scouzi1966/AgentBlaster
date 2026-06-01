@@ -33,15 +33,39 @@ AGENT_PROFILES: tuple[AgentProfile, ...] = (
     ),
     AgentProfile(
         id="hermes",
-        display_name="Hermes-style multi-tool agent",
-        description="Planner loop, browser/search/file tools, MCP fixture expansion, memory-like context, and delegation pressure.",
-        representative_features=("planner", "browser fixture", "MCP", "multi-tool"),
+        display_name="Nous Hermes-style multi-tool agent",
+        description="Planner loop, browser/search/file tools, MCP fixture expansion, LCP context bundles, memory-like context, and delegation pressure.",
+        representative_features=("planner", "browser fixture", "MCP", "LCP", "multi-tool"),
     ),
     AgentProfile(
         id="pi",
         display_name="Pi-style local compatibility agent",
         description="Lean local-provider compatibility, simple chat, trace replay, and structured summary without advanced role assumptions.",
         representative_features=("lean prompts", "trace replay", "structured summary", "local provider"),
+    ),
+    AgentProfile(
+        id="aider",
+        display_name="Aider-style pair-programming agent",
+        description="Patch-oriented coding loop with explicit file context, deterministic diff reasoning, and replayed test feedback.",
+        representative_features=("pair programming", "diff reasoning", "test replay", "repo tools"),
+    ),
+    AgentProfile(
+        id="cline",
+        display_name="Cline-style plan/action agent",
+        description="Stepwise plan, file inspection action, bounded command execution, and explicit final status.",
+        representative_features=("plan-act loop", "file tools", "shell fixture", "bounded actions"),
+    ),
+    AgentProfile(
+        id="continue",
+        display_name="Continue-style IDE retrieval agent",
+        description="IDE-local retrieval, documentation lookup, and concise structured engineering summary.",
+        representative_features=("IDE retrieval", "docs search", "structured summary", "local provider"),
+    ),
+    AgentProfile(
+        id="codex",
+        display_name="Codex-style sandboxed coding agent",
+        description="Sandbox-aware command planning, safe shell replay, concise final answer, and no host-tool escalation.",
+        representative_features=("sandbox policy", "shell fixture", "concise final", "auditability"),
     ),
 )
 
@@ -63,7 +87,7 @@ def generate_agent_suite(profile_id: str, *, include_all: bool = False) -> Suite
         cases: list[BenchmarkCase] = []
         for profile in AGENT_PROFILES:
             cases.extend(_profile_cases(profile.id))
-        return _suite("agentic-local-profiles", "Representative local-agent workflow profiles for OpenCode, OpenClaw, Hermes, and Pi patterns.", cases)
+        return _suite("agentic-local-profiles", "Representative local-agent workflow profiles for common local coding and tool-using agent patterns.", cases)
     profile = get_agent_profile(profile_id)
     return _suite(
         f"agentic-{profile.id}",
@@ -104,6 +128,14 @@ def _profile_cases(profile_id: str) -> list[BenchmarkCase]:
         return _hermes_cases()
     if profile_id == "pi":
         return _pi_cases()
+    if profile_id == "aider":
+        return _aider_cases()
+    if profile_id == "cline":
+        return _cline_cases()
+    if profile_id == "continue":
+        return _continue_cases()
+    if profile_id == "codex":
+        return _codex_cases()
     raise ConfigError(f"unknown agent profile: {profile_id}")
 
 
@@ -231,6 +263,22 @@ def _hermes_cases() -> list[BenchmarkCase]:
             risk_level="low",
             license="MIT",
         ),
+        BenchmarkCase(
+            id="hermes-lcp-context-boundary",
+            title="Hermes-style LCP scoped context boundary",
+            scenario="local context protocol",
+            system_prompt="Use the attached deterministic LCP context bundle only. Do not infer host filesystem, browser, or memory state beyond the bundle.",
+            prompt="From the LCP fixture context, report the project status sentinel exactly.",
+            expected_substring="agentblaster-lcp-ok",
+            lcp_profile="fixture-lcp",
+            skills=["agent-planning"],
+            metrics=["ttft_ms", "tokens_per_second_prefill", "latency_ms"],
+            max_tokens=48,
+            tags=["agent-profile", "hermes", "lcp", "context-boundary"],
+            provenance="synthetic_representative",
+            risk_level="low",
+            license="MIT",
+        ),
     ]
 
 
@@ -265,4 +313,108 @@ def _pi_cases() -> list[BenchmarkCase]:
             risk_level="low",
             license="MIT",
         ),
+    ]
+
+
+def _aider_cases() -> list[BenchmarkCase]:
+    return [
+        BenchmarkCase(
+            id="aider-diff-test-replay",
+            title="Aider-style patch and test replay",
+            scenario="pair programming patch loop",
+            prompt="Inspect the fixture repository, replay the tests, and summarize with exactly: agentblaster-ok",
+            messages=[
+                {"role": "system", "content": "You are replaying a pair-programming agent loop. Use only fixture context."},
+                {"role": "user", "content": "Inspect /repo/src/app.py, infer the one-line status behavior, then use the replayed tests."},
+                {"role": "assistant", "content": "", "tool_calls": [{"id": "call_read", "type": "function", "function": {"name": "read_file_fixture", "arguments": '{"path":"/repo/src/app.py"}'}}]},
+                {"role": "tool", "name": "read_file_fixture", "tool_call_id": "call_read", "content": '{"path":"/repo/src/app.py","content":"agentblaster-ok"}'},
+                {"role": "assistant", "content": "", "tool_calls": [{"id": "call_test", "type": "function", "function": {"name": "shell_fixture", "arguments": '{"command":"pytest -q"}'}}]},
+                {"role": "tool", "name": "shell_fixture", "tool_call_id": "call_test", "content": '{"command":"pytest -q","exit_code":0,"stdout":"3 passed\\n","stderr":""}'},
+                {"role": "user", "content": "Summarize the outcome with exactly: agentblaster-ok"},
+            ],
+            expected_substring="agentblaster-ok",
+            simulated_tools=["read_file_fixture", "shell_fixture"],
+            tools=[SAFE_TOOL_SCHEMAS["read_file_fixture"], SAFE_TOOL_SCHEMAS["shell_fixture"]],
+            skills=["repo-triage", "safe-tool-replay"],
+            metrics=["latency_ms", "tool_calls_valid", "tokens_per_second_decode"],
+            max_tokens=48,
+            tags=["agent-profile", "aider", "pair-programming", "trace-replay"],
+            provenance="synthetic_representative",
+            risk_level="low",
+            license="MIT",
+        )
+    ]
+
+
+def _cline_cases() -> list[BenchmarkCase]:
+    return [
+        BenchmarkCase(
+            id="cline-plan-act-read",
+            title="Cline-style plan/action file inspection",
+            scenario="plan action loop",
+            system_prompt="Create a brief plan internally, then use exactly one fixture action before the final answer.",
+            prompt="Read /repo/README.md with read_file_fixture and answer with exactly: agentblaster-ok",
+            expected_tool_name="read_file_fixture",
+            expected_tool_result_substring="Fixture Repo",
+            simulated_tools=["read_file_fixture"],
+            tools=[SAFE_TOOL_SCHEMAS["read_file_fixture"]],
+            tool_choice={"type": "function", "function": {"name": "read_file_fixture"}},
+            skills=["agent-planning", "repo-triage"],
+            metrics=["ttft_ms", "tool_calls_valid", "tool_loop_rounds"],
+            max_tokens=80,
+            tags=["agent-profile", "cline", "plan-act", "file-tools"],
+            provenance="synthetic_representative",
+            risk_level="low",
+            license="MIT",
+        )
+    ]
+
+
+def _continue_cases() -> list[BenchmarkCase]:
+    return [
+        BenchmarkCase(
+            id="continue-doc-retrieval-summary",
+            title="Continue-style IDE retrieval summary",
+            scenario="IDE retrieval",
+            system_prompt="Use deterministic retrieval context only and return compact JSON.",
+            prompt='Search docs for "security policy" and return {"status":"agentblaster-ok","source":"docs"}',
+            expected_tool_name="search_docs",
+            expected_tool_result_substring="Raw API keys must never appear",
+            simulated_tools=["search_docs"],
+            tools=[SAFE_TOOL_SCHEMAS["search_docs"]],
+            tool_choice={"type": "function", "function": {"name": "search_docs"}},
+            response_format={"type": "json_object"},
+            expected_json_fields={"status": "agentblaster-ok", "source": "docs"},
+            skills=["repo-triage"],
+            metrics=["structured_output_valid", "tool_calls_valid", "latency_ms"],
+            max_tokens=96,
+            tags=["agent-profile", "continue", "retrieval", "structured"],
+            provenance="synthetic_representative",
+            risk_level="low",
+            license="MIT",
+        )
+    ]
+
+
+def _codex_cases() -> list[BenchmarkCase]:
+    return [
+        BenchmarkCase(
+            id="codex-sandbox-command-plan",
+            title="Codex-style sandboxed command plan",
+            scenario="sandboxed command planning",
+            system_prompt="You are a sandbox-aware coding agent. Use only the deterministic shell fixture and do not request host escalation.",
+            prompt="Use shell_fixture to run python -m agentblaster --version, then answer with exactly: agentblaster-ok",
+            expected_tool_name="shell_fixture",
+            expected_tool_result_substring="0.1.0",
+            simulated_tools=["shell_fixture"],
+            tools=[SAFE_TOOL_SCHEMAS["shell_fixture"]],
+            tool_choice={"type": "function", "function": {"name": "shell_fixture"}},
+            skills=["safe-tool-replay"],
+            metrics=["tool_calls_valid", "latency_ms", "tokens_per_second_decode"],
+            max_tokens=64,
+            tags=["agent-profile", "codex", "sandbox", "command"],
+            provenance="synthetic_representative",
+            risk_level="low",
+            license="MIT",
+        )
     ]

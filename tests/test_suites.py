@@ -7,7 +7,131 @@ from agentblaster.suites import BUILTIN_SUITES, load_suite_file, validate_case_o
 
 
 def test_builtin_suites_include_core_mvp_families() -> None:
-    assert {"smoke", "structured", "toolcall", "prefill", "toolsim", "trace-replay", "lcp-context"}.issubset(BUILTIN_SUITES)
+    assert {
+        "smoke",
+        "structured",
+        "toolcall",
+        "prefill",
+        "toolsim",
+        "agentic-tool-loop",
+        "trace-replay",
+        "agent-fanout",
+        "cache-control",
+        "cancellation",
+        "lcp-context",
+        "tool-parser-repair",
+        "harness-engineering",
+    }.issubset(BUILTIN_SUITES)
+
+
+def test_builtin_agent_fanout_suite_declares_parallel_subagent_shape() -> None:
+    suite = BUILTIN_SUITES["agent-fanout"]
+
+    assert suite.provenance.origin == "builtin"
+    assert len(suite.cases) == 4
+    assert {case.scenario for case in suite.cases} == {"agent fan-out"}
+    assert {case.id for case in suite.cases} == {
+        "fanout-planner-outline",
+        "fanout-code-worker",
+        "fanout-doc-worker",
+        "fanout-synthesizer",
+    }
+    assert all(case.expected_substring and case.expected_substring.startswith("agentblaster-") for case in suite.cases)
+    assert all("queue_ms" in case.metrics for case in suite.cases)
+    assert all("rate_limit_wait_ms" in case.metrics for case in suite.cases)
+    assert all("fanout" in case.tags for case in suite.cases)
+    assert all("concurrency" in case.tags for case in suite.cases)
+
+
+def test_builtin_prefill_suite_declares_repeated_static_prefix_shape() -> None:
+    suite = BUILTIN_SUITES["prefill"]
+    shared_prefix_cases = [case for case in suite.cases if case.scenario == "prefill shared prefix"]
+
+    assert suite.provenance.origin == "builtin"
+    assert len(suite.cases) == 4
+    assert {case.id for case in shared_prefix_cases} == {
+        "prefill-static-prefix-warmup",
+        "prefill-static-prefix-replay",
+        "prefill-static-prefix-suffix-mutation",
+    }
+    assert len({case.system_prompt for case in shared_prefix_cases}) == 1
+    assert all(case.system_prompt and "static agent instruction block" in case.system_prompt for case in shared_prefix_cases)
+    assert all("tokens_per_second_prefill" in case.metrics for case in suite.cases)
+    assert all("cache_hit_ratio" in case.metrics for case in suite.cases)
+    assert all("repeated-system-prompt" in case.tags for case in shared_prefix_cases)
+
+
+def test_builtin_agentic_tool_loop_suite_declares_mcp_lcp_and_boundary_cases() -> None:
+    suite = BUILTIN_SUITES["agentic-tool-loop"]
+
+    assert suite.provenance.origin == "builtin"
+    assert len(suite.cases) == 3
+    assert {case.id for case in suite.cases} == {
+        "tool-loop-route-final",
+        "tool-loop-mcp-lcp-context",
+        "tool-loop-max-call-boundary",
+    }
+    assert all(case.max_tool_calls == 2 for case in suite.cases)
+    assert all("tool-loop" in case.tags for case in suite.cases)
+    assert all("tool_loop_stop_reason" in case.metrics for case in suite.cases)
+    mcp_lcp_case = next(case for case in suite.cases if case.id == "tool-loop-mcp-lcp-context")
+    assert mcp_lcp_case.mcp_profile == "fixture-mcp"
+    assert mcp_lcp_case.lcp_profile == "fixture-lcp"
+    assert mcp_lcp_case.expected_tool_name == "mcp_fixture_read_resource"
+    boundary_case = next(case for case in suite.cases if case.id == "tool-loop-max-call-boundary")
+    assert boundary_case.expected_substring is None
+    assert boundary_case.tool_choice == {"type": "function", "function": {"name": "route_agentblaster_task"}}
+
+
+def test_builtin_cancellation_suite_declares_stream_abort_contract() -> None:
+    suite = BUILTIN_SUITES["cancellation"]
+    case = suite.cases[0]
+
+    assert suite.provenance.origin == "builtin"
+    assert case.id == "cancellation-stream-abort"
+    assert case.streaming is True
+    assert case.cancel_after_ms == 100
+    assert case.expected_substring is None
+    assert "canceled" in case.metrics
+    assert "cancellation_latency_ms" in case.metrics
+    assert "cancellation" in case.tags
+
+
+def test_builtin_tool_parser_repair_suite_rejects_raw_text_tool_calls() -> None:
+    suite = BUILTIN_SUITES["tool-parser-repair"]
+
+    assert suite.provenance.origin == "builtin"
+    assert len(suite.cases) == 2
+    assert {case.scenario for case in suite.cases} == {"tool parser repair"}
+    assert {case.id for case in suite.cases} == {
+        "parser-required-api-envelope",
+        "parser-react-xml-boundary",
+    }
+    assert all(case.expected_tool_name for case in suite.cases)
+    assert all(case.tool_choice for case in suite.cases)
+    assert all("tool_parser_repair_required" in case.metrics for case in suite.cases)
+    assert all("invalid_tool_call_count" in case.metrics for case in suite.cases)
+    assert all("repair" in case.tags for case in suite.cases)
+    assert "Raw JSON" in str(suite.cases[0].system_prompt)
+    assert "Action:" in suite.cases[1].prompt
+
+
+def test_builtin_harness_engineering_suite_declares_emerging_harness_surfaces() -> None:
+    suite = BUILTIN_SUITES["harness-engineering"]
+
+    assert suite.provenance.origin == "builtin"
+    assert len(suite.cases) == 4
+    assert {case.scenario for case in suite.cases} == {
+        "harness contract fuzz",
+        "harness metamorphic",
+        "harness cache replay",
+        "harness judge rubric",
+    }
+    assert all("harness" in case.tags for case in suite.cases)
+    assert any(case.streaming for case in suite.cases)
+    assert any("cache-replay" in case.tags and "tokens_per_second_prefill" in case.metrics for case in suite.cases)
+    assert any("judge-rubric" in case.tags and "judge_verdict_valid" in case.metrics for case in suite.cases)
+    assert any("metamorphic" in case.tags for case in suite.cases)
 
 
 def test_load_suite_file(tmp_path) -> None:

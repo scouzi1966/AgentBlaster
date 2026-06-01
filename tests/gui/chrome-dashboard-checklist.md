@@ -14,7 +14,8 @@ Use this checklist with the Codex Chrome plugin for profile-aware dashboard vali
 - Launch form: confirm the provider, suite, model, raw-trace, concurrency, and allow-remote controls are visible without JavaScript.
 - Redaction: inspect the page, `/api/providers`, `/api/runs`, and one `/api/runs/<run-id>` response for seeded secrets or raw authorization headers.
 - Stable selectors: confirm `data-testid="launch-form"`, `data-testid="runs-panel"`, `data-testid="runs-table"`, and `data-testid="run-row"` are present.
-- Report links: confirm generated `report.html`, `publication.json`, and `report-card.svg` links open only through allowlisted artifact URLs.
+- Report links: confirm generated `report.html`, `report.pdf`, `publication.json`, and `report-card.svg` links open only through allowlisted artifact URLs.
+- Provider-contract evidence: inspect the Review evidence panel and `/api/review-artifacts` for provider-contract direct/proxy/not-covered capability evidence without raw provider payloads.
 - Responsive layout: inspect desktop and narrow mobile widths with Chrome responsive mode.
 - Security headers: inspect the network response for `x-content-type-options`, `referrer-policy`, and `content-security-policy`.
 - Reports: open generated HTML reports in Chrome and confirm no raw secrets or raw trace filenames are rendered.
@@ -25,4 +26,5 @@ Use this checklist with the Codex Chrome plugin for profile-aware dashboard vali
 - Desktop screenshot.
 - Narrow-width screenshot.
 - Redacted API response snippets or screenshots.
+- Screenshot or redacted `/api/review-artifacts` snippet showing provider-contract capability evidence.
 - Notes for any behavior that should become a deterministic Playwright or pytest regression.

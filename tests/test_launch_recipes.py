@@ -10,7 +10,17 @@ def test_launch_recipe_catalog_includes_target_local_engines() -> None:
     catalog = launch_recipe_catalog()
     engines = {item["engine"] for item in catalog["engines"]}
 
-    assert {"afm", "mlx-lm", "ollama", "lm-studio", "omlx", "rapid-mlx", "vllm-mlx"} <= engines
+    assert {
+        "afm",
+        "mlx-lm",
+        "ollama",
+        "lm-studio",
+        "lm-studio-anthropic",
+        "omlx",
+        "rapid-mlx",
+        "vllm-mlx",
+        "vllm-mlx-anthropic",
+    } <= engines
     assert catalog["schema_version"] == "agentblaster.launch-recipe-catalog.v1"
 
 
@@ -32,6 +42,15 @@ def test_native_launch_recipe_declares_native_adapter() -> None:
     assert recipe["native_adapter"] == "ollama"
     assert "--native-adapter" in recipe["provider_add_command"]
     assert "ollama" in format_launch_recipe_markdown(recipe)
+
+
+def test_anthropic_launch_recipe_declares_version_header() -> None:
+    recipe = build_launch_recipe("lm-studio-anthropic", model="qwen-test")
+
+    assert recipe["contract"] == "anthropic"
+    assert "--header" in recipe["provider_add_command"]
+    assert "anthropic-version=2023-06-01" in recipe["provider_add_command"]
+    assert recipe["base_url"] == "http://127.0.0.1:1234/v1"
 
 
 def test_cli_launch_recipes_catalog_and_single_recipe(tmp_path) -> None:

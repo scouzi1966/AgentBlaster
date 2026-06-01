@@ -18,8 +18,23 @@ allowed_metrics_url_hosts:
 allowed_secret_ref_kinds:
   - env
   - keyring
+# Optional corporate allowlist for environment variable names or keyring entry names.
+# Secret values are never listed here.
+allowed_secret_ref_prefixes:
+  - AGENTBLASTER_
+  - OPENAI_
+  - ANTHROPIC_
+  - WORKSPACE_
+  - afm:
+  - lm-studio:
+  - openai
+  - anthropic
 allow_remote_providers: false
 require_api_key_for_remote_providers: true
+require_cost_model_for_remote_providers: true
+require_rate_limits_for_remote_providers: true
+allow_non_loopback_http_provider_urls: false
+allow_non_loopback_http_metrics_urls: false
 allow_full_raw_traces: false
 allow_insecure_tls: false
 allow_tool_schemas: true
@@ -37,6 +52,10 @@ allow_mcp_profiles: true
 allowed_mcp_profiles:
   - fixture-mcp
   - wide-mcp-32
+allow_lcp_profiles: true
+allowed_lcp_profiles:
+  - fixture-lcp
+  - wide-lcp-context
 allow_skills: true
 allowed_skills:
   - repo-triage
@@ -72,3 +91,4 @@ allowed_dashboard_ports:
   - 8765
 allow_dashboard_non_loopback: false
 require_dashboard_auth: true
+require_cleanup_audit_log: true

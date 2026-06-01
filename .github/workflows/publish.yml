@@ -1,0 +1,49 @@
+name: Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build release package artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Static environment and packaging readiness
+        run: |
+          mkdir -p dist release-reports
+          agentblaster doctor --output-json release-reports/environment-readiness.json --fail-on-required-gaps
+          agentblaster release packaging-readiness --output-json release-reports/packaging-readiness.json --fail-on-gaps
+          agentblaster release provenance --output release-reports/release-provenance.json
+
+      - name: Build source and wheel distributions
+        run: python -m build
+
+      - name: Scan shareable release artifacts
+        run: agentblaster security scan dist release-reports --output-json release-reports/redaction-scan.json
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentblaster-package
+          path: |
+            dist/
+            release-reports/

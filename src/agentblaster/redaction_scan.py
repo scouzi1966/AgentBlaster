@@ -11,11 +11,15 @@ from agentblaster.errors import ConfigError
 
 
 SCAN_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("openai_api_key", re.compile(r"sk-[A-Za-z0-9_\-]{16,}")),
     ("anthropic_api_key", re.compile(r"sk-ant-[A-Za-z0-9_\-]{16,}")),
+    ("openai_api_key", re.compile(r"sk-(?!ant-)[A-Za-z0-9_\-]{16,}")),
     ("github_token", re.compile(r"gh[opusr]_[A-Za-z0-9_]{16,}")),
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9._\-]{16,}", re.IGNORECASE)),
     ("aws_access_key_id", re.compile(r"AKIA[0-9A-Z]{16}")),
+    ("macos_user_path", re.compile(r"/Users/[A-Za-z0-9._\-]+(?:/[^\s\"']*)?")),
+    ("macos_volume_path", re.compile(r"/Volumes/[A-Za-z0-9._\-]+(?:/[^\s\"']*)?")),
+    ("private_local_path", re.compile(r"/private/[A-Za-z0-9._\-/]+")),
+    ("windows_user_path", re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9._\-]+(?:[\\/]+[^\s\"']*)?")),
 ]
 TEXT_SUFFIXES = {
     ".csv",
@@ -31,6 +35,7 @@ TEXT_SUFFIXES = {
     ".xml",
 }
 ZIP_SUFFIXES = {".zip"}
+REDACTION_SCAN_SCHEMA_VERSION = "agentblaster.redaction-scan.v1"
 
 
 class RedactionScanFinding(BaseModel):
@@ -50,6 +55,7 @@ class RedactionScanReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: str = REDACTION_SCAN_SCHEMA_VERSION
     ok: bool
     total_paths: int = Field(ge=0)
     scanned_items: int = Field(ge=0)
@@ -88,7 +94,7 @@ def scan_paths(paths: list[Path], *, max_bytes: int = 2_000_000) -> RedactionSca
                 skipped += 1
                 continue
             scanned += 1
-            findings.extend(_scan_text(text, path=str(path), entry=None))
+            findings.extend(_scan_text(text, path=_safe_report_path(path), entry=None))
     return RedactionScanReport(
         ok=not findings,
         total_paths=len(paths),
@@ -104,6 +110,7 @@ def scan_paths(paths: list[Path], *, max_bytes: int = 2_000_000) -> RedactionSca
 
 def format_redaction_scan_report(report: RedactionScanReport) -> str:
     lines = [
+        f"schema_version: {report.schema_version}",
         f"ok: {str(report.ok).lower()}",
         f"total_paths: {report.total_paths}",
         f"scanned_items: {report.scanned_items}",
@@ -115,14 +122,11 @@ def format_redaction_scan_report(report: RedactionScanReport) -> str:
         if finding.line is not None:
             location = f"{location}:{finding.line}"
         lines.append(f"{finding.pattern}	{location}	{finding.message}")
-    return "
-".join(lines) + "
-"
+    return "\n".join(lines) + "\n"
 
 
 def redaction_scan_json(report: RedactionScanReport) -> str:
-    return json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "
-"
+    return json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
 
 
 def _iter_files(path: Path):
@@ -145,6 +149,8 @@ def _scan_zip(path: Path, findings: list[RedactionScanFinding], *, max_bytes: in
             for info in sorted(archive.infolist(), key=lambda item: item.filename):
                 if info.is_dir():
                     continue
+                entry_report_label = _zip_entry_report_label(info.filename)
+                findings.extend(_scan_zip_entry_name(info.filename, path=_safe_report_path(path)))
                 entry_path = Path(info.filename)
                 if entry_path.suffix.lower() not in TEXT_SUFFIXES:
                     skipped += 1
@@ -157,10 +163,58 @@ def _scan_zip(path: Path, findings: list[RedactionScanFinding], *, max_bytes: in
                     skipped += 1
                     continue
                 scanned += 1
-                findings.extend(_scan_text(text, path=str(path), entry=info.filename))
+                findings.extend(_scan_text(text, path=_safe_report_path(path), entry=entry_report_label))
     except (OSError, BadZipFile) as exc:
         raise ConfigError(f"unable to scan zip artifact {path}: {exc}") from exc
     return scanned, skipped
+
+
+def _scan_zip_entry_name(entry: str, *, path: str) -> list[RedactionScanFinding]:
+    findings: list[RedactionScanFinding] = []
+    normalized = entry.replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part not in {"", "."}]
+    safe_entry = _safe_zip_entry_label(entry)
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized) or ".." in parts:
+        findings.append(
+            RedactionScanFinding(
+                path=path,
+                entry=safe_entry,
+                line=None,
+                pattern="zip_unsafe_entry_path",
+                message="unsafe zip entry path detected; archive member name suppressed from extracted paths",
+            )
+        )
+    for name, pattern in SCAN_PATTERNS:
+        if pattern.search(entry):
+            findings.append(
+                RedactionScanFinding(
+                    path=path,
+                    entry=safe_entry,
+                    line=None,
+                    pattern=name,
+                    message="secret-like or local-path pattern detected in zip entry name; matched value suppressed",
+                )
+            )
+    return findings
+
+
+def _zip_entry_report_label(entry: str) -> str:
+    normalized = entry.replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part not in {"", "."}]
+    unsafe = normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized) or ".." in parts
+    sensitive = any(pattern.search(entry) for _, pattern in SCAN_PATTERNS)
+    if unsafe or sensitive:
+        return _safe_zip_entry_label(entry)
+    return entry
+
+
+def _safe_zip_entry_label(entry: str) -> str:
+    normalized = entry.replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part not in {"", ".", ".."}]
+    label = parts[-1] if parts else "<redacted-entry>"
+    if any(pattern.search(label) for _, pattern in SCAN_PATTERNS):
+        return "<redacted-entry>"
+    return label or "<redacted-entry>"
 
 
 def _decode_text(data: bytes) -> str | None:
@@ -168,6 +222,12 @@ def _decode_text(data: bytes) -> str | None:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return None
+
+
+def _safe_report_path(path: Path) -> str:
+    if path.is_absolute():
+        return path.name
+    return path.as_posix()
 
 
 def _scan_text(text: str, *, path: str, entry: str | None) -> list[RedactionScanFinding]:

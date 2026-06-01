@@ -9,7 +9,23 @@ import httpx
 
 from agentblaster.errors import AdapterError
 from agentblaster.models import AdapterResponse, ApiContract, BenchmarkCase, ProbeResult, ProviderConfig, ToolCallRecord
+from agentblaster.redaction import redact_value
 from agentblaster.secrets import SecretResolver
+
+
+SAFE_RESPONSE_HEADERS = {
+    "request-id",
+    "x-request-id",
+    "openai-request-id",
+    "anthropic-request-id",
+    "x-ratelimit-limit-requests",
+    "x-ratelimit-remaining-requests",
+    "x-ratelimit-reset-requests",
+    "x-ratelimit-limit-tokens",
+    "x-ratelimit-remaining-tokens",
+    "x-ratelimit-reset-tokens",
+    "retry-after",
+}
 
 
 class ProviderAdapter:
@@ -77,19 +93,17 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             raise AdapterError(f"OpenAI probe failed for {self.provider.name}: {exc}") from exc
 
         models: list[str] = []
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
-            data = raw.get("data", [])
-            if isinstance(data, list):
-                models = [str(item.get("id")) for item in data if isinstance(item, Mapping) and item.get("id")]
+        raw = response_json_or_metadata(response)
+        data = raw.get("data", [])
+        if isinstance(data, list):
+            models = [str(item.get("id")) for item in data if isinstance(item, Mapping) and item.get("id")]
 
         return ProbeResult(
             provider=self.provider.name,
             contract=self.provider.contract,
             ok=response.is_success,
             status_code=response.status_code,
-            message="ok" if response.is_success else response.text[:240],
+            message="ok" if response.is_success else _redacted_response_text(response),
             models=models,
             raw=raw,
         )
@@ -119,9 +133,7 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             raise AdapterError(f"OpenAI smoke request failed for {self.provider.name}: {exc}") from exc
         latency_ms = (perf_counter() - started) * 1000
 
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
+        raw = response_json_or_metadata(response)
 
         text = ""
         choices = raw.get("choices", [])
@@ -153,6 +165,8 @@ class OpenAICompatibleAdapter(ProviderAdapter):
         raw_events: list[dict[str, Any]] = []
         status_code = 0
         ttft_ms = None
+        canceled = False
+        cancellation_latency_ms = None
         tool_call_fragments: dict[int, dict[str, Any]] = {}
         try:
             with self.client.stream(
@@ -178,10 +192,22 @@ class OpenAICompatibleAdapter(ProviderAdapter):
                     if ttft_ms is None and _openai_stream_event_has_output(event):
                         ttft_ms = (perf_counter() - started) * 1000
                     _accumulate_openai_stream_event(event, text_parts, tool_call_fragments)
+                    cancellation_elapsed = _stream_cancellation_elapsed_ms(case, started)
+                    if cancellation_elapsed is not None:
+                        canceled = True
+                        cancellation_latency_ms = cancellation_elapsed
+                        break
         except httpx.HTTPError as exc:
             raise AdapterError(f"OpenAI streaming request failed for {self.provider.name}: {exc}") from exc
         latency_ms = (perf_counter() - started) * 1000
-        raw = {"stream": True, "events": raw_events}
+        raw = {
+            "stream": True,
+            "events": raw_events,
+            "agentblaster_http": _safe_http_metadata(response),
+            "agentblaster_cancelled": canceled,
+            "cancel_after_ms": case.cancel_after_ms,
+            "cancellation_latency_ms": cancellation_latency_ms,
+        }
         tool_calls = _stream_tool_calls(tool_call_fragments)
         return AdapterResponse(
             provider=self.provider.name,
@@ -194,6 +220,8 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             tool_calls=tool_calls,
             streaming=True,
             ttft_ms=round(ttft_ms, 3) if ttft_ms is not None else None,
+            canceled=canceled,
+            cancellation_latency_ms=cancellation_latency_ms,
         )
 
 
@@ -234,9 +262,7 @@ class OpenAIResponsesAdapter(OpenAICompatibleAdapter):
             raise AdapterError(f"OpenAI Responses request failed for {self.provider.name}: {exc}") from exc
         latency_ms = (perf_counter() - started) * 1000
 
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
+        raw = response_json_or_metadata(response)
         tool_calls = extract_openai_responses_tool_calls(raw)
 
         return AdapterResponse(
@@ -264,6 +290,8 @@ class OpenAIResponsesAdapter(OpenAICompatibleAdapter):
         status = None
         status_code = 0
         ttft_ms = None
+        canceled = False
+        cancellation_latency_ms = None
         try:
             with self.client.stream(
                 "POST",
@@ -291,6 +319,11 @@ class OpenAIResponsesAdapter(OpenAICompatibleAdapter):
                     response_status = _openai_responses_stream_status(event)
                     if response_status:
                         status = response_status
+                    cancellation_elapsed = _stream_cancellation_elapsed_ms(case, started)
+                    if cancellation_elapsed is not None:
+                        canceled = True
+                        cancellation_latency_ms = cancellation_elapsed
+                        break
         except httpx.HTTPError as exc:
             raise AdapterError(f"OpenAI Responses streaming request failed for {self.provider.name}: {exc}") from exc
 
@@ -300,6 +333,10 @@ class OpenAIResponsesAdapter(OpenAICompatibleAdapter):
             "events": raw_events,
             "usage": usage,
             "status": status,
+            "agentblaster_http": _safe_http_metadata(response),
+            "agentblaster_cancelled": canceled,
+            "cancel_after_ms": case.cancel_after_ms,
+            "cancellation_latency_ms": cancellation_latency_ms,
         }
         tool_calls = _openai_responses_stream_tool_calls(tool_call_fragments)
         return AdapterResponse(
@@ -313,6 +350,8 @@ class OpenAIResponsesAdapter(OpenAICompatibleAdapter):
             tool_calls=tool_calls,
             streaming=True,
             ttft_ms=round(ttft_ms, 3) if ttft_ms is not None else None,
+            canceled=canceled,
+            cancellation_latency_ms=cancellation_latency_ms,
         )
 
 
@@ -333,19 +372,17 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             raise AdapterError(f"Anthropic probe failed for {self.provider.name}: {exc}") from exc
 
         models: list[str] = []
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
-            data = raw.get("data", [])
-            if isinstance(data, list):
-                models = [str(item.get("id")) for item in data if isinstance(item, Mapping) and item.get("id")]
+        raw = response_json_or_metadata(response)
+        data = raw.get("data", [])
+        if isinstance(data, list):
+            models = [str(item.get("id")) for item in data if isinstance(item, Mapping) and item.get("id")]
 
         return ProbeResult(
             provider=self.provider.name,
             contract=ApiContract.ANTHROPIC,
             ok=response.is_success,
             status_code=response.status_code,
-            message="ok" if response.is_success else response.text[:240],
+            message="ok" if response.is_success else _redacted_response_text(response),
             models=models,
             raw=raw,
         )
@@ -364,7 +401,7 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
         if system_prompt:
             payload["system"] = system_prompt
         if case.tools:
-            payload["tools"] = [_openai_tool_to_anthropic(tool) for tool in case.tools]
+            payload["tools"] = _anthropic_tools_from_case(case)
         if case.tool_choice:
             payload["tool_choice"] = _openai_tool_choice_to_anthropic(case.tool_choice)
         started = perf_counter()
@@ -376,9 +413,7 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             raise AdapterError(f"Anthropic smoke request failed for {self.provider.name}: {exc}") from exc
         latency_ms = (perf_counter() - started) * 1000
 
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
+        raw = response_json_or_metadata(response)
 
         text_parts: list[str] = []
         content = raw.get("content", [])
@@ -413,6 +448,8 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
         stop_reason = None
         status_code = 0
         ttft_ms = None
+        canceled = False
+        cancellation_latency_ms = None
         try:
             with self.client.stream(
                 "POST",
@@ -438,6 +475,11 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
                     event_stop_reason = _anthropic_stream_stop_reason(event)
                     if event_stop_reason:
                         stop_reason = event_stop_reason
+                    cancellation_elapsed = _stream_cancellation_elapsed_ms(case, started)
+                    if cancellation_elapsed is not None:
+                        canceled = True
+                        cancellation_latency_ms = cancellation_elapsed
+                        break
         except httpx.HTTPError as exc:
             raise AdapterError(f"Anthropic streaming request failed for {self.provider.name}: {exc}") from exc
 
@@ -447,6 +489,10 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             "events": raw_events,
             "usage": usage,
             "stop_reason": stop_reason,
+            "agentblaster_http": _safe_http_metadata(response),
+            "agentblaster_cancelled": canceled,
+            "cancel_after_ms": case.cancel_after_ms,
+            "cancellation_latency_ms": cancellation_latency_ms,
         }
         tool_calls = _anthropic_stream_tool_calls(tool_call_fragments)
         return AdapterResponse(
@@ -460,6 +506,8 @@ class AnthropicCompatibleAdapter(ProviderAdapter):
             tool_calls=tool_calls,
             streaming=True,
             ttft_ms=round(ttft_ms, 3) if ttft_ms is not None else None,
+            canceled=canceled,
+            cancellation_latency_ms=cancellation_latency_ms,
         )
 
 
@@ -479,23 +527,21 @@ class OllamaNativeAdapter(ProviderAdapter):
             raise AdapterError(f"Ollama native probe failed for {self.provider.name}: {exc}") from exc
 
         models: list[str] = []
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
-            data = raw.get("models", [])
-            if isinstance(data, list):
-                models = [
-                    str(item.get("name") or item.get("model"))
-                    for item in data
-                    if isinstance(item, Mapping) and (item.get("name") or item.get("model"))
-                ]
+        raw = response_json_or_metadata(response)
+        data = raw.get("models", [])
+        if isinstance(data, list):
+            models = [
+                str(item.get("name") or item.get("model"))
+                for item in data
+                if isinstance(item, Mapping) and (item.get("name") or item.get("model"))
+            ]
 
         return ProbeResult(
             provider=self.provider.name,
             contract=ApiContract.NATIVE,
             ok=response.is_success,
             status_code=response.status_code,
-            message="ok" if response.is_success else response.text[:240],
+            message="ok" if response.is_success else _redacted_response_text(response),
             models=models,
             raw=raw,
         )
@@ -520,9 +566,7 @@ class OllamaNativeAdapter(ProviderAdapter):
             raise AdapterError(f"Ollama native chat request failed for {self.provider.name}: {exc}") from exc
         latency_ms = (perf_counter() - started) * 1000
 
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
+        raw = response_json_or_metadata(response)
 
         message = raw.get("message", {})
         text = ""
@@ -558,23 +602,21 @@ class LMStudioNativeAdapter(ProviderAdapter):
             raise AdapterError(f"LM Studio native probe failed for {self.provider.name}: {exc}") from exc
 
         models: list[str] = []
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
-            data = raw.get("models", raw.get("data", []))
-            if isinstance(data, list):
-                models = [
-                    str(item.get("key") or item.get("id") or item.get("model"))
-                    for item in data
-                    if isinstance(item, Mapping) and (item.get("key") or item.get("id") or item.get("model"))
-                ]
+        raw = response_json_or_metadata(response)
+        data = raw.get("models", raw.get("data", []))
+        if isinstance(data, list):
+            models = [
+                str(item.get("key") or item.get("id") or item.get("model"))
+                for item in data
+                if isinstance(item, Mapping) and (item.get("key") or item.get("id") or item.get("model"))
+            ]
 
         return ProbeResult(
             provider=self.provider.name,
             contract=ApiContract.NATIVE,
             ok=response.is_success,
             status_code=response.status_code,
-            message="ok" if response.is_success else response.text[:240],
+            message="ok" if response.is_success else _redacted_response_text(response),
             models=models,
             raw=raw,
         )
@@ -599,9 +641,7 @@ class LMStudioNativeAdapter(ProviderAdapter):
             raise AdapterError(f"LM Studio native chat request failed for {self.provider.name}: {exc}") from exc
         latency_ms = (perf_counter() - started) * 1000
 
-        raw: dict[str, Any] = {}
-        if response.headers.get("content-type", "").startswith("application/json"):
-            raw = response.json()
+        raw = response_json_or_metadata(response)
 
         tool_calls = extract_lmstudio_tool_calls(raw)
         return AdapterResponse(
@@ -622,27 +662,79 @@ class LMStudioNativeAdapter(ProviderAdapter):
         return base_url + "/api/v1"
 
 
-def adapter_for(provider: ProviderConfig, *, secrets: SecretResolver | None = None) -> ProviderAdapter:
+def adapter_for(
+    provider: ProviderConfig,
+    *,
+    secrets: SecretResolver | None = None,
+    client: httpx.Client | None = None,
+    timeout: float = 10.0,
+) -> ProviderAdapter:
     if provider.contract is ApiContract.OPENAI:
-        return OpenAICompatibleAdapter(provider, secrets=secrets)
+        return OpenAICompatibleAdapter(provider, secrets=secrets, client=client, timeout=timeout)
     if provider.contract is ApiContract.OPENAI_RESPONSES:
-        return OpenAIResponsesAdapter(provider, secrets=secrets)
+        return OpenAIResponsesAdapter(provider, secrets=secrets, client=client, timeout=timeout)
     if provider.contract is ApiContract.ANTHROPIC:
-        return AnthropicCompatibleAdapter(provider, secrets=secrets)
+        return AnthropicCompatibleAdapter(provider, secrets=secrets, client=client, timeout=timeout)
     if provider.contract is ApiContract.NATIVE and provider.native_adapter == "ollama":
-        return OllamaNativeAdapter(provider, secrets=secrets)
+        return OllamaNativeAdapter(provider, secrets=secrets, client=client, timeout=timeout)
     if provider.contract is ApiContract.NATIVE and provider.native_adapter == "lm-studio":
-        return LMStudioNativeAdapter(provider, secrets=secrets)
+        return LMStudioNativeAdapter(provider, secrets=secrets, client=client, timeout=timeout)
     raise AdapterError(f"no generic adapter exists for native provider: {provider.name}")
 
 
-def _openai_messages_from_case(case: BenchmarkCase) -> list[dict[str, Any]]:
-    if case.messages:
-        return [_trace_message_to_openai(message) for message in case.messages]
+def response_json_or_metadata(response: httpx.Response) -> dict[str, Any]:
+    content_type = response.headers.get("content-type", "")
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    raw: dict[str, Any]
+    if media_type == "application/json" or media_type.endswith("+json"):
+        try:
+            parsed = response.json()
+        except json.JSONDecodeError:
+            raw = {"agentblaster_parse_error": "invalid_json_response"}
+        else:
+            raw = dict(parsed) if isinstance(parsed, Mapping) else {"agentblaster_json": parsed}
+    else:
+        raw = {"agentblaster_non_json_response": True}
+        preview = _redacted_body_preview(response)
+        if preview:
+            raw["agentblaster_body_preview"] = preview
+    raw["agentblaster_http"] = _safe_http_metadata(response)
+    return raw
 
+
+def _safe_http_metadata(response: httpx.Response) -> dict[str, Any]:
+    safe_headers = {
+        key.lower(): value
+        for key, value in response.headers.items()
+        if key.lower() in SAFE_RESPONSE_HEADERS
+    }
+    return {
+        "status_code": response.status_code,
+        "content_type": response.headers.get("content-type"),
+        "headers": dict(redact_value(safe_headers)),
+    }
+
+
+def _redacted_body_preview(response: httpx.Response, *, limit: int = 240) -> str:
+    try:
+        text = response.text
+    except UnicodeDecodeError:
+        return "<binary response>"
+    return str(redact_value(text[:limit]))
+
+
+def _redacted_response_text(response: httpx.Response, *, limit: int = 240) -> str:
+    return _redacted_body_preview(response, limit=limit)
+
+
+def _openai_messages_from_case(case: BenchmarkCase, *, include_system_prompt: bool = True) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
-    if case.system_prompt:
+    if include_system_prompt and case.system_prompt:
         messages.append({"role": "system", "content": case.system_prompt})
+    if case.messages:
+        messages.extend(_trace_message_to_openai(message) for message in case.messages)
+        return messages
+
     messages.append({"role": "user", "content": case.prompt})
     return messages
 
@@ -660,7 +752,7 @@ def _trace_message_to_openai(message: Any) -> dict[str, Any]:
 
 def _openai_responses_input_from_case(case: BenchmarkCase) -> str | list[dict[str, Any]]:
     if case.messages:
-        return _openai_messages_from_case(case)
+        return _openai_messages_from_case(case, include_system_prompt=False)
     return case.prompt
 
 
@@ -1262,6 +1354,15 @@ def _tool_names(calls: list[ToolCallRecord]) -> list[str]:
     return [call.name for call in calls]
 
 
+def _stream_cancellation_elapsed_ms(case: BenchmarkCase, started: float) -> float | None:
+    if case.cancel_after_ms is None:
+        return None
+    elapsed_ms = (perf_counter() - started) * 1000
+    if elapsed_ms < case.cancel_after_ms:
+        return None
+    return round(elapsed_ms, 3)
+
+
 def _parse_tool_arguments(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
@@ -1278,12 +1379,23 @@ def _parse_tool_arguments(value: Any) -> dict[str, Any]:
 def _openai_tool_to_anthropic(tool: Mapping[str, Any]) -> dict[str, Any]:
     if tool.get("type") == "function" and isinstance(tool.get("function"), Mapping):
         function = tool["function"]
-        return {
+        converted = {
             "name": function.get("name"),
             "description": function.get("description", ""),
             "input_schema": function.get("parameters", {"type": "object", "properties": {}}),
         }
+        cache_control = tool.get("cache_control") or function.get("cache_control")
+        if isinstance(cache_control, Mapping):
+            converted["cache_control"] = dict(cache_control)
+        return converted
     return dict(tool)
+
+
+def _anthropic_tools_from_case(case: BenchmarkCase) -> list[dict[str, Any]]:
+    tools = [_openai_tool_to_anthropic(tool) for tool in case.tools]
+    if tools and case.cache_control and "cache_control" not in tools[-1]:
+        tools[-1] = {**tools[-1], "cache_control": dict(case.cache_control)}
+    return tools
 
 
 def _openai_chat_tool_to_responses_tool(tool: Mapping[str, Any]) -> dict[str, Any]:

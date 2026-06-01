@@ -18,8 +18,9 @@ The audit reports:
 - Deterministic simulated tools.
 - MCP fixture profiles.
 - Skill packs.
-- Structured-output, streaming, and trace-replay case counts.
-- Governance findings such as missing `source_url`, missing `license`, high-risk cases, and unnamed tool schemas.
+- Structured-output, streaming, cancellation, and trace-replay case counts.
+- Dataset hygiene metadata, including duplicate workload fingerprints computed from prompt, message, tool, response-format, simulator, MCP/LCP, skill, and expected-assertion fields without printing prompt text.
+- Governance findings such as missing `source_url`, missing `license`, high-risk cases, duplicate workload fingerprints, and unnamed tool schemas.
 
 The audit is intentionally static. It does not dispatch provider requests, execute tools, start MCP servers, read provider configs, resolve API keys, or inspect raw run artifacts.
 
@@ -34,9 +35,9 @@ The audit is intentionally static. It does not dispatch provider requests, execu
 
 ## Governance Rules
 
-Externally derived cases should include `source_url` and `license`. High-risk cases should be reviewed for data sensitivity, prompt-injection content, and whether they require stricter raw-trace retention settings. Tool schemas should always be named so policy allowlists can enforce explicit approval.
+Externally derived cases should include `source_url` and `license`. High-risk cases should be reviewed for data sensitivity, prompt-injection content, and whether they require stricter raw-trace retention settings. Duplicate workload fingerprints should be deduped or explicitly justified before release gates so a small repeated fixture does not overstate engine reliability. Tool schemas should always be named so policy allowlists can enforce explicit approval.
 
-Tool-capable cases should declare `max_tool_calls` when they model multi-step agent loops. Enterprise policy can enforce this with `require_max_tool_calls_for_tool_cases: true` and cap the bound with `max_tool_calls_per_case`.
+Tool-capable cases should declare `max_tool_calls` when they model multi-step agent loops. When `max_tool_calls > 1`, AgentBlaster can perform bounded deterministic fixture tool-result round trips before evaluating the final answer. Enterprise policy can enforce this with `require_max_tool_calls_for_tool_cases: true` and cap the bound with `max_tool_calls_per_case`.
 
 Policy can also enforce governance metadata before dispatch:
 
@@ -64,4 +65,4 @@ agentblaster suite-calibration --suite-file examples/suites/agentic-local-profil
 agentblaster suite-calibration --suite-file examples/suites/agentic-local-profiles.yaml --calibration reports/agentic-local-profiles-calibration.json --output-json reports/agentic-local-profiles-calibration-report.json
 ```
 
-A passing calibration requires known-good evidence, known-bad evidence, failure taxonomy coverage, human review, and release-gate approval. The command is static and does not contact providers.
+A passing calibration requires known-good evidence, known-bad evidence, failure taxonomy coverage, human review, and release-gate approval. The command is static and does not contact providers. Completed `agentblaster.suite-calibration-report.v1` artifacts can be supplied to release qualification and claim readiness; failed reports block release-gate qualification when supplied.

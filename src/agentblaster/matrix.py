@@ -45,6 +45,7 @@ class MatrixExecutionRunSummary(BaseModel):
     index: int = Field(ge=1)
     engine: str = Field(min_length=1)
     provider: str = Field(min_length=1)
+    engine_target: dict | None = None
     model: str
     suite: str
     suite_file: str | None = None

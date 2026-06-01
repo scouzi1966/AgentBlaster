@@ -14,9 +14,15 @@ def test_model_catalog_contains_initial_dense_targets() -> None:
     assert targets["qwen3.6-27b-dense"].density == "dense"
     assert targets["qwen3.6-27b-dense"].parameter_count == "27B"
     assert targets["qwen3.6-27b-dense"].metadata.architecture == "qwen3.6-dense"
+    assert targets["qwen3.6-27b-dense"].comparison_group == "qwen3.6-27b-dense"
+    assert "quantization" in targets["qwen3.6-27b-dense"].required_release_metadata
+    assert any("separate primary charts" in item for item in targets["qwen3.6-27b-dense"].publication_guidance)
     assert targets["gemma-4-31b-dense"].density == "dense"
     assert targets["gemma-4-31b-dense"].parameter_count == "31B"
     assert targets["gemma-4-31b-dense"].metadata.architecture == "gemma-4-dense"
+    assert targets["gemma-4-31b-dense"].comparison_group == "gemma-4-31b-dense"
+    assert "revision" in targets["gemma-4-31b-dense"].required_release_metadata
+    assert any("quantization class" in item for item in targets["gemma-4-31b-dense"].publication_guidance)
 
 
 def test_get_model_target_rejects_unknown_target() -> None:

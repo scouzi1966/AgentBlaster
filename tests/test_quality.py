@@ -15,6 +15,8 @@ from agentblaster.quality import (
     render_gui_test_spec_markdown,
     render_sdlc_gate_catalog_json,
     render_sdlc_gate_catalog_markdown,
+    render_sdlc_validation_manifest_json,
+    render_sdlc_validation_manifest_markdown,
     write_gui_test_artifacts,
 )
 
@@ -44,6 +46,12 @@ def test_sdlc_gate_catalog_maps_quality_commands_to_release_evidence() -> None:
     assert gates["remote-provider-optional"].required is False
     assert any(gate["command"].startswith("agentblaster selftest") for gate in catalog["gates"])
     assert any(gate["id"] == "chrome-codex-review" for gate in catalog["gates"])
+    assert "provider-contract capability evidence" in gates["chrome-codex-review"].evidence
+    assert "direct/proxy/not-covered" in gates["chrome-codex-review"].purpose
+    assert "--matrix-gate reports/qwen-gemma-matrix-gate.json" in gates["release-qualification"].command
+    assert "agentic-tool-loop" in gates["release-qualification"].evidence
+    assert "failure-class gate summaries" in gates["release-qualification"].purpose
+    assert "tool-loop stop-reason gate summaries" in gates["release-qualification"].purpose
     assert "# AgentBlaster SDLC Gate Catalog" in markdown
     assert "release-qualification" in markdown
 
@@ -68,6 +76,13 @@ def test_chrome_gui_plan_is_structured_redaction_safe_and_chrome_oriented() -> N
     assert any("real API keys" in item for item in plan["safety"])
     assert {flow.id for flow in flows} >= {"dashboard-smoke-redaction", "provider-and-launch-flow", "report-artifact-review"}
     assert any('data-testid="runs-table"' in flow["selectors"] for flow in plan["flows"])
+    assert any('data-testid="review-artifacts-panel"' in flow["selectors"] for flow in plan["flows"])
+    assert any("provider-contract direct/proxy/not-covered capability evidence" in " ".join(flow["expected"]) for flow in plan["flows"])
+    assert any('data-testid="run-plan-submit"' in flow["selectors"] for flow in plan["flows"])
+    assert any("/api/review-artifacts" in flow["api_surfaces"] for flow in plan["flows"])
+    assert any("/api/local-engine-onboarding" in flow["api_surfaces"] for flow in plan["flows"])
+    assert any("POST /api/run-plan" in flow["api_surfaces"] for flow in plan["flows"])
+    assert "run-plan preview safety contract" in markdown
     assert "# AgentBlaster Chrome GUI Self-Test Plan" in markdown
     assert "Dashboard URL: `http://127.0.0.1:9999`" in markdown
 
@@ -78,7 +93,11 @@ def test_chrome_validation_checklist_covers_dashboard_security_and_evidence() ->
 
     assert any(step.id == "chrome-redaction-check" for step in steps)
     assert any(step.id == "chrome-api-surfaces" for step in steps)
+    assert any(step.id == "chrome-provider-contract-capability-evidence" for step in steps)
+    assert any(step.id == "chrome-review-evidence" for step in steps)
     assert "Codex Chrome plugin" in markdown
+    assert "Review evidence panel" in markdown
+    assert "direct/proxy/not-covered capability evidence" in markdown
     assert "Every finding should be converted into a deterministic Playwright or pytest fixture" in markdown
 
 
@@ -104,6 +123,29 @@ def test_gui_test_spec_unifies_playwright_chrome_and_release_evidence() -> None:
     assert spec["chrome_codex"]["tool"] == "Codex Chrome plugin"
     assert spec["chrome_codex"]["plan"]["schema_version"] == "agentblaster.chrome-gui-plan.v1"
     assert "sk-" in spec["security_canaries"]
+
+
+def test_sdlc_validation_manifest_unifies_app_validation_lanes() -> None:
+    manifest = json.loads(
+        render_sdlc_validation_manifest_json(
+            name="release-sdlc",
+            dashboard_url="http://127.0.0.1:8765",
+            fixture_dir="fixtures/gui",
+            evidence_dir="evidence/gui",
+            browser="chrome",
+        )
+    )
+    markdown = render_sdlc_validation_manifest_markdown(name="release-sdlc")
+
+    assert manifest["schema_version"] == "agentblaster.sdlc-validation-manifest.v1"
+    assert manifest["boundary"] == "This manifest validates AgentBlaster itself, not benchmarked engines or model quality."
+    assert manifest["summary"]["tier_count"] >= 1
+    assert manifest["summary"]["required_gate_count"] >= 1
+    assert manifest["gui"]["chrome_tool"] == "Codex Chrome plugin"
+    assert "review-artifacts-panel" in manifest["gui"]["stable_selectors"]
+    assert "selftest-report.json" in manifest["release_evidence"]["expected_artifacts"]
+    assert manifest["security"]["runs_tests"] is False
+    assert "Required Blocking Gates" in markdown
     assert "# AgentBlaster GUI Self-Test Specification" in markdown
     assert "Chrome/Codex Evidence Lane" in markdown
 

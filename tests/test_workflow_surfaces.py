@@ -31,7 +31,15 @@ def test_workflow_surface_catalog_covers_agentic_protocol_families() -> None:
     assert any(profile["name"] == "wide-mcp-32" for profile in surfaces["mcp-fixtures"]["mcp_profiles"])
     assert any(pack["name"] == "large-prefix-diagnostic" for pack in surfaces["skill-packs"]["skill_packs"])
     assert surfaces["lcp-emerging"]["stability"] == "emerging"
+    assert surfaces["lcp-emerging"]["capability_requirements"] == ["lcp_context"]
     assert "cache replay" in " ".join(surfaces["harness-engineering"]["benchmark_dimensions"])
+    assert "judge-rubric" in surfaces["harness-engineering"]["artifacts"]
+    assert {"structured_output", "judge_rubric", "prompt_caching", "tool_loop"} <= set(
+        surfaces["harness-engineering"]["capability_requirements"]
+    )
+    assert {"tool_calling", "tool_loop"} <= set(
+        surfaces["openai-anthropic-tool-calling"]["capability_requirements"]
+    )
 
 
 def test_workflow_surface_lookup_json_and_markdown_are_stable() -> None:

@@ -260,6 +260,7 @@ class ComparisonGateFinding(BaseModel):
 class ComparisonGateReport(BaseModel):
     """Machine-readable pass/fail report for a baseline-vs-candidate comparison gate."""
 
+    schema_version: str = "agentblaster.comparison-gate.v1"
     baseline: RunComparisonRow
     candidate: RunComparisonRow
     ok: bool
@@ -369,8 +370,7 @@ def evaluate_comparison_gate(
 
 def write_comparison_gate_json(report: ComparisonGateReport, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(report.model_dump_json(indent=2) + "
-", encoding="utf-8")
+    output_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return output_path
 
 
@@ -386,9 +386,7 @@ def format_comparison_gate_report(report: ComparisonGateReport) -> str:
             f"{finding.metric}	baseline={_format_float(finding.baseline)}	"
             f"candidate={_format_float(finding.candidate)}	threshold={finding.threshold}	{finding.message}"
         )
-    return "
-".join(lines) + "
-"
+    return "\n".join(lines) + "\n"
 
 
 def _append_latency_regression(

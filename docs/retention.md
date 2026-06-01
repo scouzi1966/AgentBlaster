@@ -65,10 +65,12 @@ Plan expired cleanup without deleting anything:
 agentblaster cleanup-expired --runs runs --output-json reports/cleanup-plan.json
 ```
 
+Retention cleanup JSON output uses `agentblaster.retention-cleanup.v1` and includes run-directory scope, execution mode, action count, planned or executed actions, local path references, audit-log requirement state, and redaction-safe security flags. Use `--require-audit-log` or policy field `require_cleanup_audit_log: true` in enterprise scripts when cleanup planning or deletion must be blocked unless an audit destination is configured. Route cleanup reports through `agentblaster evidence index` before sharing externally; direct cleanup reports are operational audit artifacts, not publication artifacts.
+
 Apply the planned cleanup actions:
 
 ```bash
-agentblaster cleanup-expired --runs runs --execute --audit-log audit/control-plane.jsonl
+agentblaster cleanup-expired --runs runs --execute --audit-log audit/control-plane.jsonl --require-audit-log --policy agentblaster.policy.yaml
 ```
 
 Retention cleanup behavior:
@@ -82,9 +84,14 @@ Retention cleanup behavior:
 Manual cleanup remains available:
 
 ```bash
-agentblaster cleanup runs/<run-id> --raw --reports --exports
+agentblaster cleanup runs/<run-id> --raw --reports --exports --caches --temp --bundles --output-json reports/manual-cleanup-plan.json
+agentblaster cleanup runs/<run-id> --raw --reports --exports --caches --temp --bundles --execute --audit-log audit/control-plane.jsonl --require-audit-log --policy agentblaster.policy.yaml
 agentblaster cleanup runs/<run-id> --all-artifacts
 ```
+
+Manual cleanup defaults to dry-run planning. Add `--execute` only after reviewing terminal output or the optional JSON plan. JSON output uses `agentblaster.cleanup-plan.v1` and includes selector state, path count, selected local paths, execution mode, audit-log requirement state, and redaction-safe security flags. Use `--require-audit-log` or policy field `require_cleanup_audit_log: true` in enterprise scripts when cleanup planning or deletion must be blocked unless an audit destination is configured. Route cleanup reports through `agentblaster evidence index` before sharing externally; direct cleanup reports are operational audit artifacts, not publication artifacts.
+
+Manual selectors only remove known generated artifacts inside the selected run directory. `--caches` targets local cache directories such as `cache/`, `caches/`, `.cache/`, `prompt-cache/`, and `prompt-caches/`; `--temp` targets `tmp/` and `temp/`; `--bundles` targets generated publication, matrix publication, release qualification, and evidence bundle directories or ZIP files created under that run.
 
 Reports and publication JSON include the retention policy so reviewers can see whether an artifact bundle is suitable for sharing.
 

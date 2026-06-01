@@ -9,7 +9,7 @@ from agentblaster.matrix import MatrixDefinition, MatrixRun
 from agentblaster.model_catalog import get_model_target
 from agentblaster.models import RawTraceMode
 
-DEFAULT_STRESS_SUITES = ["prefill", "trace-replay"]
+DEFAULT_STRESS_SUITES = ["agentic-tool-loop", "agent-fanout", "prefill", "harness-engineering", "trace-replay"]
 DEFAULT_CONCURRENCY_LEVELS = [1, 2, 4, 8]
 
 

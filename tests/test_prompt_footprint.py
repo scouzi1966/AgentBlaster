@@ -21,8 +21,11 @@ def test_suite_prompt_footprint_breaks_down_prefill_surfaces() -> None:
                 prompt="Reply with exactly: agentblaster-ok",
                 simulated_tools=["search_docs"],
                 mcp_profile="fixture-mcp",
+                lcp_profile="fixture-lcp",
                 skills=["repo-triage"],
                 response_format={"type": "json_object"},
+                streaming=True,
+                cancel_after_ms=100,
             ),
             BenchmarkCase(
                 id="case-two",
@@ -31,6 +34,7 @@ def test_suite_prompt_footprint_breaks_down_prefill_surfaces() -> None:
                 prompt="Reply with exactly: agentblaster-ok",
                 simulated_tools=["search_docs"],
                 mcp_profile="fixture-mcp",
+                lcp_profile="fixture-lcp",
                 skills=["repo-triage"],
             ),
         ],
@@ -42,11 +46,21 @@ def test_suite_prompt_footprint_breaks_down_prefill_surfaces() -> None:
     assert report["case_count"] == 2
     assert report["component_totals"]["simulated_tools"] > 0
     assert report["component_totals"]["mcp_profile"] > 0
+    assert report["component_totals"]["lcp_profile"] > 0
     assert report["component_totals"]["skills"] > 0
     assert report["shared_static_prefixes"][0]["case_count"] == 2
+    assert report["shared_static_reuse"]["group_count"] == 1
+    assert report["shared_static_reuse"]["repeated_case_count"] == 1
+    assert report["shared_static_reuse"]["potential_cache_reuse_tokens"] > 0
+    assert report["prefill_pressure"]["potential_cache_reuse_tokens"] > 0
+    assert "lcp" in report["cases"][0]["surfaces"]
     assert "structured" in report["cases"][0]["surfaces"]
+    assert "streaming" in report["cases"][0]["surfaces"]
+    assert "cancellation" in report["cases"][0]["surfaces"]
     assert "prefill_pressure" in report
-    assert "AgentBlaster prompt footprint" in format_prompt_footprint_report(report)
+    formatted = format_prompt_footprint_report(report)
+    assert "AgentBlaster prompt footprint" in formatted
+    assert "potential_cache_reuse_tokens" in formatted
 
 
 def test_cli_suite_footprint_writes_json_for_suite_file(tmp_path) -> None:
@@ -59,9 +73,10 @@ cases:
   - id: case-one
     title: Case one
     system_prompt: Shared system prompt.
-    prompt: Reply with exactly: agentblaster-ok
+    prompt: "Reply with exactly: agentblaster-ok"
     simulated_tools:
       - search_docs
+    lcp_profile: fixture-lcp
     skills:
       - repo-triage
 """,

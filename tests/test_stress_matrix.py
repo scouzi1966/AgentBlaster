@@ -36,6 +36,22 @@ def test_generate_stress_matrix_rejects_invalid_concurrency() -> None:
         )
 
 
+def test_default_stress_matrix_includes_harness_engineering() -> None:
+    matrix = generate_stress_matrix(
+        providers=["afm"],
+        target_ids=["qwen3.6-27b-dense"],
+        concurrency_levels=[1],
+    )
+
+    assert {run.suite for run in matrix.runs} == {
+        "agentic-tool-loop",
+        "agent-fanout",
+        "prefill",
+        "harness-engineering",
+        "trace-replay",
+    }
+
+
 def test_stress_matrix_summary_is_redaction_safe() -> None:
     matrix = generate_stress_matrix(
         providers=["afm"],

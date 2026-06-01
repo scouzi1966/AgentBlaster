@@ -161,6 +161,8 @@ def _manifest(
                 command.extend(["--policy", str(policy)])
             readiness_commands.append({"provider": provider, "target": target, "output": str(readiness_path), "command": command})
     matrix_summary = report_dir / f"{kit_name}-matrix-summary.json"
+    contract_matrix_plan = report_dir / f"{kit_name}-provider-contract-matrix-plan.json"
+    contract_matrix = report_dir / f"{kit_name}-provider-contract-matrix.json"
     return {
         "schema_version": "agentblaster.benchmark-kit.v1",
         "name": kit_name,
@@ -175,6 +177,23 @@ def _manifest(
         "report_dir": str(report_dir),
         "readiness_commands": readiness_commands,
         "matrix_commands": {
+            "contract_plan": [
+                "agentblaster",
+                "matrix",
+                "contract-checks",
+                str(matrix_path),
+                "--output-json",
+                str(contract_matrix_plan),
+            ],
+            "contract_execute": [
+                "agentblaster",
+                "matrix",
+                "contract-checks",
+                str(matrix_path),
+                "--execute",
+                "--output-json",
+                str(contract_matrix),
+            ],
             "dry_run": [
                 "agentblaster",
                 "run",
@@ -193,7 +212,16 @@ def _manifest(
                 "--matrix-summary-json",
                 str(matrix_summary),
             ],
-            "report": ["agentblaster", "matrix", "report", str(matrix_summary), "--format", "html,md,json"],
+            "report": ["agentblaster", "matrix", "report", str(matrix_summary), "--format", "html,md,json,pdf"],
+            "scorecard": ["agentblaster", "matrix", "scorecard", str(matrix_summary), "--format", "html,md,json,card,pdf"],
+            "publication_bundle": [
+                "agentblaster",
+                "matrix",
+                "publication-bundle",
+                str(matrix_summary),
+                "--output-dir",
+                str(report_dir / "publication-bundles"),
+            ],
             "gate": [
                 "agentblaster",
                 "matrix",
@@ -204,6 +232,14 @@ def _manifest(
                 "0",
                 "--min-case-pass-rate",
                 "95",
+                "--max-failure-class",
+                "engine_protocol_bug=0",
+                "--max-tool-loop-stop-reason",
+                "max_tool_calls_reached=0",
+                "--max-invalid-tool-calls",
+                "0",
+                "--min-tool-parser-repair-valid-rate",
+                "100",
                 "--output-json",
                 str(report_dir / f"{kit_name}-matrix-gate.json"),
             ],
@@ -256,25 +292,38 @@ def _runbook(
                 ]
             )
     matrix_summary = report_dir / f"{kit_name}-matrix-summary.json"
+    contract_matrix_plan = report_dir / f"{kit_name}-provider-contract-matrix-plan.json"
+    contract_matrix = report_dir / f"{kit_name}-provider-contract-matrix.json"
     lines.extend(
         [
-            "## 2. Dry-run the matrix",
+            "## 2. Check provider contracts",
+            "",
+            "Plan-only mode is no-network. Executed mode contacts the configured local providers and writes release-grade contract evidence.",
+            "",
+            "```bash",
+            f"agentblaster matrix contract-checks {matrix_path} --output-json {contract_matrix_plan}",
+            f"agentblaster matrix contract-checks {matrix_path} --execute --output-json {contract_matrix}",
+            "```",
+            "",
+            "## 3. Dry-run the matrix",
             "",
             "```bash",
             f"agentblaster run --matrix {matrix_path} --offline --dry-run",
             "```",
             "",
-            "## 3. Execute the matrix",
+            "## 4. Execute the matrix",
             "",
             "```bash",
             f"agentblaster run --matrix {matrix_path} --offline --continue-on-error --matrix-summary-json {matrix_summary}",
             "```",
             "",
-            "## 4. Generate reports and gate results",
+            "## 5. Generate reports and gate results",
             "",
             "```bash",
-            f"agentblaster matrix report {matrix_summary} --format html,md,json",
-            f"agentblaster matrix gate {matrix_summary} --require-all-runs-complete --max-failed-runs 0 --min-case-pass-rate 95 --output-json {report_dir / (kit_name + '-matrix-gate.json')}",
+            f"agentblaster matrix report {matrix_summary} --format html,md,json,pdf",
+            f"agentblaster matrix scorecard {matrix_summary} --format html,md,json,card,pdf",
+            f"agentblaster matrix publication-bundle {matrix_summary} --output-dir {report_dir / 'publication-bundles'}",
+            f"agentblaster matrix gate {matrix_summary} --require-all-runs-complete --max-failed-runs 0 --min-case-pass-rate 95 --max-failure-class engine_protocol_bug=0 --max-tool-loop-stop-reason max_tool_calls_reached=0 --max-invalid-tool-calls 0 --min-tool-parser-repair-valid-rate 100 --output-json {report_dir / (kit_name + '-matrix-gate.json')}",
             "```",
             "",
             "## Safety",

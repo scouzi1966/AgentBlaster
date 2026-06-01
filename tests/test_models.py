@@ -18,7 +18,45 @@ def test_provider_accepts_env_secret_reference() -> None:
 
     assert provider.api_key_ref is not None
     assert provider.api_key_ref.display() == "env:OPENAI_API_KEY"
+    assert provider.api_key_ref.redacted_display() == "env:OPENAI_API_KEY"
+    assert provider.api_key_ref.display_path_redacted() is False
     assert str(provider.metrics_url).rstrip("/") == "https://metrics.example.com/metrics"
+
+
+def test_provider_accepts_dotenv_secret_reference(tmp_path) -> None:
+    provider = ProviderConfig(
+        name="openai-dev",
+        contract=ApiContract.OPENAI,
+        base_url="https://api.openai.com/v1",
+        api_key_ref=SecretRef(kind="dotenv", name=f"AGENTBLASTER_OPENAI_API_KEY@{tmp_path / 'dev.env'}"),
+        remote=True,
+    )
+
+    assert provider.api_key_ref is not None
+    assert provider.api_key_ref.display().startswith("dotenv:AGENTBLASTER_OPENAI_API_KEY@")
+    assert provider.api_key_ref.redacted_display() == "dotenv:AGENTBLASTER_OPENAI_API_KEY@<redacted-path>"
+    assert provider.api_key_ref.display_path_redacted() is True
+
+
+def test_secret_ref_rejects_invalid_env_reference_names() -> None:
+    with pytest.raises(ValidationError, match="environment variable names"):
+        SecretRef(kind="env", name="sk-testshouldnotbehere1234567890")
+
+    with pytest.raises(ValidationError, match="environment variable names"):
+        SecretRef(kind="env", name="OPENAI-API-KEY")
+
+
+def test_secret_ref_rejects_invalid_dotenv_reference_names() -> None:
+    with pytest.raises(ValidationError, match="dotenv secret references"):
+        SecretRef(kind="dotenv", name="OPENAI_API_KEY")
+
+    with pytest.raises(ValidationError, match="dotenv secret references"):
+        SecretRef(kind="dotenv", name="OPENAI-API-KEY@/tmp/dev.env")
+
+
+def test_secret_ref_rejects_raw_secret_like_reference_names() -> None:
+    with pytest.raises(ValidationError, match="raw secret material"):
+        SecretRef(kind="keyring", name="Bearer sk-testshouldnotbehere1234567890")
 
 
 def test_provider_rejects_raw_auth_header() -> None:
@@ -80,9 +118,11 @@ def test_benchmark_case_accepts_prd_metadata_fields() -> None:
         skills=["repo-triage"],
         metrics=["ttft_ms", "tokens_per_second_decode"],
         timeout_seconds=45.0,
+        cancel_after_ms=250,
     )
 
     assert case.provenance == "internal_regression"
     assert case.scenario == "code edit loop"
     assert case.risk_level == "medium"
     assert case.timeout_seconds == 45.0
+    assert case.cancel_after_ms == 250

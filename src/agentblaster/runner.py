@@ -11,10 +11,11 @@ from uuid import uuid4
 
 from agentblaster.adapters import ProviderAdapter, adapter_for
 from agentblaster.costs import estimate_costs
+from agentblaster.engine_targets import compact_engine_target_for_provider, get_engine_target
 from agentblaster.environment import capture_environment
 from agentblaster.failures import classify_exception_failure, classify_response_failure
 from agentblaster.lcp import lcp_profile_text
-from agentblaster.mcp import mcp_profile_tool_schemas
+from agentblaster.mcp import execute_mcp_profile_tools, mcp_profile_tool_names, mcp_profile_tool_schemas
 from agentblaster.models import (
     AdapterResponse,
     ApiContract,
@@ -28,7 +29,9 @@ from agentblaster.models import (
     RunIntegrityManifest,
     RunManifest,
     RunSummary,
+    TraceMessage,
     SuiteDefinition,
+    SimulatedToolResult,
 )
 from agentblaster.observability import (
     PROMETHEUS_ARTIFACTS,
@@ -44,11 +47,22 @@ from agentblaster.toolsim import execute_simulated_tools, simulated_tool_schemas
 
 SMOKE_CASE_ID = "protocol-smoke-chat"
 SUITE_SNAPSHOT_FILENAME = "suite.json"
+RUN_EVENTS_FILENAME = "events.jsonl"
+EXPLICIT_FIXTURE_TOOL_NAMES = {
+    "route_agentblaster_task",
+    "search_agentblaster_notes",
+    "fetch_agentblaster_context",
+    "finalize_agentblaster_plan",
+}
 
 
 def new_run_id() -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"run_{timestamp}_{uuid4().hex[:8]}"
+
+
+def _enum_value(value: Any) -> Any:
+    return getattr(value, "value", value)
 
 
 def merge_model_metadata(base: ModelMetadata, override: ModelMetadata | None) -> ModelMetadata:
@@ -111,6 +125,7 @@ def case_result_metadata(case: BenchmarkCase, suite: str) -> dict[str, Any]:
         "case_risk_level": case.risk_level,
         "case_source_url": case.source_url,
         "case_license": case.license,
+        "cancel_after_ms": case.cancel_after_ms,
     }
 
 
@@ -145,6 +160,26 @@ class ArtifactWriter:
     def append_result(self, result: BenchmarkResult) -> None:
         with (self.run_dir / "results.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(result.model_dump_json(exclude_none=True) + "\n")
+
+    def append_event(self, event: str, **fields: Any) -> None:
+        payload: dict[str, Any] = {
+            "schema": "agentblaster-run-event-v1",
+            "event": event,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "run_id": self.manifest.run_id,
+            "suite": self.manifest.suite,
+            "provider": self.manifest.provider,
+            "provider_endpoint_host": self.manifest.provider_metadata.base_url_host,
+            "provider_remote": self.manifest.provider_metadata.remote,
+            "contract": _enum_value(self.manifest.contract),
+            "model": self.manifest.model,
+        }
+        engine_target = self.manifest.engine_target
+        if isinstance(engine_target, dict) and engine_target.get("id"):
+            payload["engine_target_id"] = engine_target["id"]
+        payload.update({key: value for key, value in fields.items() if value is not None})
+        with (self.run_dir / RUN_EVENTS_FILENAME).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(redact_value(payload), sort_keys=True, default=str) + "\n")
 
     def write_summary(self, summary: RunSummary) -> None:
         (self.run_dir / "summary.json").write_text(
@@ -230,12 +265,20 @@ class BenchmarkRunner:
             suite_provenance=self.suite.provenance,
             metrics_artifacts=PROMETHEUS_ARTIFACTS if self.provider.metrics_url else [],
             provider_metadata=provider_metadata,
+            engine_target=_compact_engine_target_for_provider_config(self.provider),
             environment=capture_environment(),
             model_metadata=merge_model_metadata(self.provider.model_metadata, model_metadata),
             retention_policy=self.retention_policy,
         )
         writer = ArtifactWriter(self.output_dir, manifest, self.suite)
         writer.initialize()
+        writer.append_event(
+            "run_started",
+            case_count=len(self.suite.cases),
+            concurrency=self.concurrency,
+            raw_trace_mode=_enum_value(self.raw_trace_mode),
+            metrics_enabled=self.provider.metrics_url is not None,
+        )
 
         prometheus_before = self._scrape_prometheus("before")
         if prometheus_before is not None:
@@ -284,6 +327,20 @@ class BenchmarkRunner:
                     provider_identity=provider_result_identity(provider_metadata),
                 )
             writer.append_result(result)
+            writer.append_event(
+                "case_completed",
+                case_id=result.case_id,
+                scenario=result.scenario,
+                ok=result.ok,
+                status_code=result.status_code,
+                failure_class=result.failure_class,
+                queue_ms=result.queue_ms,
+                rate_limit_wait_ms=result.rate_limit_wait_ms,
+                latency_ms=result.latency_ms,
+                ttft_ms=result.ttft_ms,
+                canceled=result.canceled,
+                cancellation_latency_ms=result.cancellation_latency_ms,
+            )
             results.append(result)
 
         prometheus_after = self._scrape_prometheus("after")
@@ -306,6 +363,16 @@ class BenchmarkRunner:
             manifest_path="manifest.json",
         )
         writer.write_summary(summary)
+        writer.append_event(
+            "run_completed",
+            total_cases=summary.total_cases,
+            passed=summary.passed,
+            failed=summary.failed,
+            started_at=summary.started_at,
+            completed_at=summary.completed_at,
+            duration_ms=summary.duration_ms,
+            requests_per_second=summary.requests_per_second,
+        )
         writer.write_integrity_manifest()
         return summary
 
@@ -335,7 +402,7 @@ class BenchmarkRunner:
         started_at = datetime.now(UTC)
         queue_ms = _duration_ms(submitted_at, started_at)
         try:
-            response = self.adapter.chat_completion(model, case_with_simulated_tools(case))
+            response = execute_case_with_tool_loop(self.adapter, model, case)
             completed_at = datetime.now(UTC)
             return case, response, None, started_at.isoformat(), completed_at.isoformat(), queue_ms, rate_limit_wait_ms
         except Exception as exc:  # noqa: BLE001 - benchmark harness records provider/runtime failures per case
@@ -391,12 +458,20 @@ class SmokeRunner:
             suite_provenance=suite.provenance,
             metrics_artifacts=PROMETHEUS_ARTIFACTS if self.provider.metrics_url else [],
             provider_metadata=provider_metadata,
+            engine_target=_compact_engine_target_for_provider_config(self.provider),
             environment=capture_environment(),
             model_metadata=merge_model_metadata(self.provider.model_metadata, model_metadata),
             retention_policy=self.retention_policy,
         )
         writer = ArtifactWriter(self.output_dir, manifest, suite)
         writer.initialize()
+        writer.append_event(
+            "run_started",
+            case_count=1,
+            concurrency=1,
+            raw_trace_mode=_enum_value(self.raw_trace_mode),
+            metrics_enabled=self.provider.metrics_url is not None,
+        )
 
         prometheus_before = self._scrape_prometheus("before")
         if prometheus_before is not None:
@@ -423,11 +498,35 @@ class SmokeRunner:
             provider_identity=provider_result_identity(provider_metadata),
         )
         writer.append_result(result)
+        writer.append_event(
+            "case_completed",
+            case_id=result.case_id,
+            scenario=result.scenario,
+            ok=result.ok,
+            status_code=result.status_code,
+            failure_class=result.failure_class,
+            queue_ms=result.queue_ms,
+            rate_limit_wait_ms=result.rate_limit_wait_ms,
+            latency_ms=result.latency_ms,
+            ttft_ms=result.ttft_ms,
+            canceled=result.canceled,
+            cancellation_latency_ms=result.cancellation_latency_ms,
+        )
         prometheus_after = self._scrape_prometheus("after")
         if prometheus_before is not None or prometheus_after is not None:
             if prometheus_after is not None:
                 writer.write_prometheus_scrape(prometheus_after)
             writer.write_prometheus_summary(prometheus_before, prometheus_after)
+        writer.append_event(
+            "run_completed",
+            total_cases=1,
+            passed=1 if result.ok else 0,
+            failed=0 if result.ok else 1,
+            started_at=result.request_started_at,
+            completed_at=result.request_completed_at,
+            duration_ms=result.latency_ms,
+            requests_per_second=None,
+        )
         writer.write_integrity_manifest()
         return result
 
@@ -484,6 +583,8 @@ def result_from_response(
         response.raw,
         native_adapter=native_adapter,
         latency_ms=response.latency_ms,
+        queue_ms=queue_ms,
+        rate_limit_wait_ms=rate_limit_wait_ms,
         ttft_ms=response.ttft_ms,
     )
     telemetry_values = telemetry["values"]
@@ -514,10 +615,20 @@ def result_from_response(
     finish_reason = str(finish_reason_value) if finish_reason_value is not None else None
     simulated_tool_results = case_simulated_tool_results(case, response)
     tool_metrics = normalize_tool_metrics(case, response)
+    tool_loop = normalize_tool_loop_metadata(response)
+    tool_parser_repair_valid = evaluate_tool_parser_repair_validity(case, response, tool_metrics)
     structured_output_valid = evaluate_structured_output_validity(case, response)
-    assertion_ok, assertion_message = evaluate_case_assertions(case, response)
+    judge_verdict_valid = evaluate_judge_verdict_validity(case, response)
+    if case.cancel_after_ms is not None and response.streaming:
+        assertion_ok = response.canceled
+        assertion_message = "" if response.canceled else "cancellation was not observed"
+    else:
+        assertion_ok, assertion_message = evaluate_case_assertions(case, response)
     ok = 200 <= response.status_code < 300 and assertion_ok
-    message = "ok" if ok else assertion_message or response.text[:240] or f"HTTP {response.status_code}"
+    if ok and response.canceled:
+        message = f"ok: canceled after {response.cancellation_latency_ms} ms"
+    else:
+        message = "ok" if ok else assertion_message or response.text[:240] or f"HTTP {response.status_code}"
 
     return BenchmarkResult(
         run_id=run_id,
@@ -530,6 +641,10 @@ def result_from_response(
         ok=ok,
         **(provider_identity or {}),
         status_code=response.status_code,
+        provider_request_id=_optional_string(telemetry_values.get("provider_request_id")),
+        response_content_type=_optional_string(telemetry_values.get("response_content_type")),
+        provider_rate_limit_remaining=_optional_dict(telemetry_values.get("provider_rate_limit_remaining")),
+        provider_retry_after_ms=_optional_float(telemetry_values.get("provider_retry_after_ms")),
         request_started_at=request_started_at,
         request_completed_at=request_completed_at,
         queue_ms=queue_ms,
@@ -553,13 +668,30 @@ def result_from_response(
         decode_ms=timings["decode_ms"],
         tokens_per_second_prefill=timings["tokens_per_second_prefill"],
         tokens_per_second_decode=timings["tokens_per_second_decode"],
+        telemetry_schema_version=telemetry["schema_version"],
+        stats_profile=_optional_string(telemetry.get("stats_profile")),
+        telemetry_sources={str(key): str(value) for key, value in telemetry.get("sources", {}).items()},
+        telemetry_quality={str(key): str(value) for key, value in telemetry.get("quality", {}).items()},
+        telemetry_comparison_readiness=telemetry.get("comparison_readiness") or {},
+        telemetry_stats_comparability=telemetry.get("stats_comparability") or {},
+        telemetry_missing=[str(field) for field in telemetry.get("missing", [])],
         raw_usage=raw_usage,
         raw_stats=raw_stats,
         tool_calls_requested=tool_metrics["tool_calls_requested"],
         tool_calls_emitted=tool_metrics["tool_calls_emitted"],
         tool_calls_valid=tool_metrics["tool_calls_valid"],
+        invalid_tool_call_count=tool_metrics["invalid_tool_call_count"],
+        tool_parser_repair_valid=tool_parser_repair_valid,
+        tool_loop_enabled=tool_loop["tool_loop_enabled"],
+        tool_loop_rounds=tool_loop["tool_loop_rounds"],
+        tool_loop_tool_call_count=tool_loop["tool_loop_tool_call_count"],
+        tool_loop_max_tool_calls=tool_loop["tool_loop_max_tool_calls"],
+        tool_loop_stop_reason=tool_loop["tool_loop_stop_reason"],
         structured_output_valid=structured_output_valid,
+        judge_verdict_valid=judge_verdict_valid,
         finish_reason=finish_reason,
+        canceled=response.canceled if case.cancel_after_ms is not None else None,
+        cancellation_latency_ms=response.cancellation_latency_ms,
         simulated_tool_results=simulated_tool_results,
         failure_class=classify_response_failure(
             status_code=response.status_code,
@@ -625,9 +757,20 @@ def result_from_error(
         request_completed_at=request_completed_at,
         queue_ms=queue_ms,
         rate_limit_wait_ms=rate_limit_wait_ms,
+        latency_ms=_request_latency_ms(request_started_at, request_completed_at),
+        canceled=False if case.cancel_after_ms is not None else None,
         failure_class=classify_exception_failure(message),
         message=message,
     )
+
+
+def _request_latency_ms(started_at: str | None, completed_at: str | None) -> float | None:
+    if not started_at or not completed_at:
+        return None
+    try:
+        return _duration_ms(datetime.fromisoformat(started_at), datetime.fromisoformat(completed_at))
+    except ValueError:
+        return None
 
 
 def evaluate_case_assertions(case: BenchmarkCase, response: AdapterResponse) -> tuple[bool, str]:
@@ -647,9 +790,10 @@ def evaluate_case_assertions(case: BenchmarkCase, response: AdapterResponse) -> 
     if case.expected_tool_name is not None:
         if case.expected_tool_name not in response.tool_names:
             return False, f"missing expected tool call: {case.expected_tool_name}"
-        tool_ok, tool_message = evaluate_tool_call_arguments(case, response, expected_tool_name=case.expected_tool_name)
-        if not tool_ok:
-            return False, tool_message
+        if response.tool_calls:
+            tool_ok, tool_message = evaluate_tool_call_arguments(case, response, expected_tool_name=case.expected_tool_name)
+            if not tool_ok:
+                return False, tool_message
 
     if case.expected_tool_result_substring is not None:
         results = case_simulated_tool_results(case, response)
@@ -667,6 +811,15 @@ def evaluate_case_assertions(case: BenchmarkCase, response: AdapterResponse) -> 
             return False, structured_message
 
     return True, ""
+
+
+def _compact_engine_target_for_provider_config(provider: ProviderConfig) -> dict[str, Any] | None:
+    target = compact_engine_target_for_provider(provider.name)
+    if target is not None:
+        return target
+    if provider.remote and provider.contract in {ApiContract.OPENAI, ApiContract.OPENAI_RESPONSES}:
+        return get_engine_target("remote-openai-compatible")
+    return None
 
 
 def case_with_simulated_tools(case: BenchmarkCase) -> BenchmarkCase:
@@ -697,10 +850,260 @@ def case_with_simulated_tools(case: BenchmarkCase) -> BenchmarkCase:
     return case.model_copy(update={"tools": [*case.tools, *injected], "system_prompt": system_prompt})
 
 
+def evaluate_tool_parser_repair_validity(
+    case: BenchmarkCase,
+    response: AdapterResponse,
+    tool_metrics: dict[str, int | None] | None = None,
+) -> bool | None:
+    if "tool-parser-repair" not in case.tags and "tool_parser_repair_required" not in case.metrics:
+        return None
+    metrics = tool_metrics or normalize_tool_metrics(case, response)
+    if metrics.get("invalid_tool_call_count") not in (0, None):
+        return False
+    if case.expected_tool_name is not None and case.expected_tool_name not in response.tool_names:
+        return False
+    tool_ok, _message = evaluate_tool_call_arguments(case, response, expected_tool_name=case.expected_tool_name)
+    return tool_ok
+
+
+def execute_case_with_tool_loop(adapter: ProviderAdapter, model: str, case: BenchmarkCase) -> AdapterResponse:
+    prepared_case = case_with_simulated_tools(case)
+    first_response = adapter.chat_completion(model, prepared_case)
+    if not case.max_tool_calls or case.max_tool_calls <= 1 or not first_response.tool_calls:
+        return first_response
+
+    responses = [first_response]
+    tool_calls_seen = len(first_response.tool_calls)
+    history = _tool_loop_initial_messages(prepared_case)
+    current_response = first_response
+    stop_reason = "no_tool_calls"
+    while current_response.tool_calls:
+        if tool_calls_seen > case.max_tool_calls:
+            stop_reason = "max_tool_calls_exceeded"
+            break
+        tool_results = case_simulated_tool_results(case, current_response)
+        if not tool_results:
+            stop_reason = "no_deterministic_tool_results"
+            break
+        _append_tool_round_messages(history, current_response, tool_results)
+        followup_case = prepared_case.model_copy(
+            update={
+                "messages": history,
+                "system_prompt": None,
+                "prompt": case.prompt,
+            },
+            deep=True,
+        )
+        current_response = adapter.chat_completion(model, followup_case)
+        responses.append(current_response)
+        tool_calls_seen += len(current_response.tool_calls)
+        if not current_response.tool_calls:
+            stop_reason = "final_response"
+            break
+        if tool_calls_seen >= case.max_tool_calls:
+            stop_reason = "max_tool_calls_reached"
+            break
+
+    return _merged_tool_loop_response(responses, stop_reason=stop_reason, max_tool_calls=case.max_tool_calls)
+
+
+def _tool_loop_initial_messages(case: BenchmarkCase) -> list[TraceMessage]:
+    messages: list[TraceMessage] = []
+    if case.system_prompt:
+        messages.append(TraceMessage(role="system", content=case.system_prompt))
+    if case.messages:
+        messages.extend(case.messages)
+    else:
+        messages.append(TraceMessage(role="user", content=case.prompt))
+    return messages
+
+
+def _append_tool_round_messages(
+    history: list[TraceMessage],
+    response: AdapterResponse,
+    tool_results: list[SimulatedToolResult],
+) -> None:
+    tool_calls = []
+    for index, call in enumerate(response.tool_calls):
+        call_id = f"call_agentblaster_{len(history)}_{index + 1}"
+        tool_calls.append(
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(call.arguments, sort_keys=True, separators=(",", ":")),
+                },
+            }
+        )
+    history.append(TraceMessage(role="assistant", content=response.text or "", tool_calls=tool_calls))
+    for tool_call, result in zip(tool_calls, tool_results, strict=False):
+        history.append(
+            TraceMessage(
+                role="tool",
+                name=str(tool_call["function"]["name"]),
+                tool_call_id=str(tool_call["id"]),
+                content=json.dumps(result.model_dump(mode="json"), sort_keys=True),
+            )
+        )
+
+
+def _merged_tool_loop_response(
+    responses: list[AdapterResponse],
+    *,
+    stop_reason: str,
+    max_tool_calls: int,
+) -> AdapterResponse:
+    final = responses[-1]
+    all_tool_calls = [call for response in responses for call in response.tool_calls]
+    raw = dict(final.raw)
+    raw["agentblaster_tool_loop"] = {
+        "enabled": True,
+        "rounds": len(responses),
+        "tool_call_count": len(all_tool_calls),
+        "max_tool_calls": max_tool_calls,
+        "stop_reason": stop_reason,
+    }
+    ttft_ms = next((response.ttft_ms for response in responses if response.ttft_ms is not None), final.ttft_ms)
+    return final.model_copy(
+        update={
+            "latency_ms": sum(response.latency_ms for response in responses),
+            "raw": raw,
+            "tool_names": _unique_preserve_order(name for response in responses for name in response.tool_names),
+            "tool_calls": all_tool_calls,
+            "streaming": any(response.streaming for response in responses),
+            "ttft_ms": ttft_ms,
+            "canceled": any(response.canceled for response in responses),
+            "cancellation_latency_ms": next(
+                (response.cancellation_latency_ms for response in responses if response.cancellation_latency_ms is not None),
+                final.cancellation_latency_ms,
+            ),
+        }
+    )
+
+
+def _unique_preserve_order(values: Any) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        item = str(value)
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def normalize_tool_loop_metadata(response: AdapterResponse) -> dict[str, bool | int | str | None]:
+    metadata = response.raw.get("agentblaster_tool_loop") if isinstance(response.raw, dict) else None
+    if not isinstance(metadata, dict) or not metadata.get("enabled"):
+        return {
+            "tool_loop_enabled": None,
+            "tool_loop_rounds": None,
+            "tool_loop_tool_call_count": None,
+            "tool_loop_max_tool_calls": None,
+            "tool_loop_stop_reason": None,
+        }
+    stop_reason = metadata.get("stop_reason")
+    return {
+        "tool_loop_enabled": True,
+        "tool_loop_rounds": _optional_int(metadata.get("rounds")),
+        "tool_loop_tool_call_count": _optional_int(metadata.get("tool_call_count")),
+        "tool_loop_max_tool_calls": _optional_int(metadata.get("max_tool_calls")),
+        "tool_loop_stop_reason": str(stop_reason) if stop_reason is not None else None,
+    }
+
+
 def case_simulated_tool_results(case: BenchmarkCase, response: AdapterResponse):
-    if not case.simulated_tools:
+    explicit_allowed = _explicit_fixture_tool_names(case)
+    if not case.simulated_tools and not case.mcp_profile and not explicit_allowed:
         return []
-    return execute_simulated_tools(response.tool_calls, allowed_tools=case.simulated_tools)
+    simulated_allowed = set(case.simulated_tools)
+    mcp_allowed = set(mcp_profile_tool_names(case.mcp_profile)) if case.mcp_profile else set()
+    simulated_calls = []
+    mcp_calls = []
+    explicit_calls = []
+    results: list[SimulatedToolResult] = []
+    for call in response.tool_calls:
+        if call.name in simulated_allowed:
+            simulated_calls.append(call)
+        elif call.name in mcp_allowed:
+            mcp_calls.append(call)
+        elif call.name in explicit_allowed:
+            explicit_calls.append(call)
+        else:
+            results.append(
+                SimulatedToolResult(
+                    tool_name=call.name,
+                    ok=False,
+                    error=f"tool is not allowed for this case: {call.name}",
+                )
+            )
+    if simulated_calls:
+        results.extend(execute_simulated_tools(simulated_calls, allowed_tools=case.simulated_tools))
+    if mcp_calls and case.mcp_profile:
+        results.extend(execute_mcp_profile_tools(mcp_calls, profile=case.mcp_profile))
+    for call in explicit_calls:
+        results.append(_execute_explicit_fixture_tool(call))
+    return results
+
+
+def _explicit_fixture_tool_names(case: BenchmarkCase) -> set[str]:
+    names: set[str] = set()
+    for tool in case.tools:
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function")
+        if isinstance(function, dict) and function.get("name") in EXPLICIT_FIXTURE_TOOL_NAMES:
+            names.add(str(function["name"]))
+        elif tool.get("name") in EXPLICIT_FIXTURE_TOOL_NAMES:
+            names.add(str(tool["name"]))
+    return names
+
+
+def _execute_explicit_fixture_tool(call: Any) -> SimulatedToolResult:
+    if not call.valid:
+        return SimulatedToolResult(tool_name=call.name, ok=False, error="provider emitted an invalid fixture tool call")
+
+    if call.name == "route_agentblaster_task":
+        route_id = str(call.arguments.get("route_id") or "")
+        return SimulatedToolResult(
+            tool_name=call.name,
+            ok=route_id.startswith("agentblaster-route-"),
+            output={
+                "route_id": route_id,
+                "accepted": route_id.startswith("agentblaster-route-"),
+                "result": "agentblaster-route-ok",
+                "host_execution": False,
+            },
+            error=None if route_id.startswith("agentblaster-route-") else f"invalid route_id: {route_id}",
+        )
+
+    if call.name == "search_agentblaster_notes":
+        query = str(call.arguments.get("query") or "")
+        return SimulatedToolResult(
+            tool_name=call.name,
+            ok=True,
+            output={"query": query, "notes": ["deterministic orchestration distractor"], "host_execution": False},
+        )
+
+    if call.name == "fetch_agentblaster_context":
+        context_id = str(call.arguments.get("context_id") or "")
+        return SimulatedToolResult(
+            tool_name=call.name,
+            ok=True,
+            output={"context_id": context_id, "context": "deterministic fixture context", "host_execution": False},
+        )
+
+    if call.name == "finalize_agentblaster_plan":
+        summary = str(call.arguments.get("summary") or "")
+        return SimulatedToolResult(
+            tool_name=call.name,
+            ok=True,
+            output={"summary": summary, "finalized": True, "host_execution": False},
+        )
+
+    return SimulatedToolResult(tool_name=call.name, ok=False, error=f"unknown explicit fixture tool: {call.name}")
 
 
 def normalize_tool_metrics(case: BenchmarkCase, response: AdapterResponse) -> dict[str, int | None]:
@@ -716,10 +1119,12 @@ def normalize_tool_metrics(case: BenchmarkCase, response: AdapterResponse) -> di
             for call in response.tool_calls
             if _tool_call_is_valid(call, offered_tool_schemas)
         )
+    invalid = emitted - valid if emitted is not None and valid is not None else None
     return {
         "tool_calls_requested": requested,
         "tool_calls_emitted": emitted,
         "tool_calls_valid": valid,
+        "invalid_tool_call_count": invalid,
     }
 
 
@@ -836,6 +1241,15 @@ def extract_raw_stats(contract: ApiContract, raw: dict) -> dict[str, Any]:
 def evaluate_structured_output_validity(case: BenchmarkCase, response: AdapterResponse) -> bool | None:
     if not case.response_format and not case.expected_json_fields:
         return None
+    ok, _message = evaluate_structured_output(case, response)
+    return ok
+
+
+def evaluate_judge_verdict_validity(case: BenchmarkCase, response: AdapterResponse) -> bool | None:
+    if "judge-rubric" not in case.tags and "judge_verdict_valid" not in case.metrics:
+        return None
+    if not case.expected_json_fields:
+        return False
     ok, _message = evaluate_structured_output(case, response)
     return ok
 
@@ -1181,7 +1595,7 @@ def _first_present(*values):
     for value in values:
         if value is not None:
             return value
-    return None
+        return None
 
 
 def _optional_float(value) -> float | None:
@@ -1191,6 +1605,17 @@ def _optional_float(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
+
+
+def _optional_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _ns_to_ms(value) -> float | None:

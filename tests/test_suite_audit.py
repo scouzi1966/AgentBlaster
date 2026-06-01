@@ -21,6 +21,21 @@ def test_suite_audit_reports_provenance_risk_and_capability_surfaces() -> None:
                 skills=["safe-tool-replay"],
                 response_format={"type": "json_object"},
                 streaming=True,
+                cancel_after_ms=100,
+            ),
+            BenchmarkCase(
+                id="external-case-copy",
+                title="External case copy",
+                prompt="Use the tool.",
+                provenance="public_benchmark_adapted",
+                risk_level="medium",
+                tools=[{"type": "function", "function": {"name": "lookup_fixture", "parameters": {"type": "object"}}}],
+                simulated_tools=["search_docs"],
+                mcp_profile="fixture-mcp",
+                skills=["safe-tool-replay"],
+                response_format={"type": "json_object"},
+                streaming=True,
+                cancel_after_ms=100,
             )
         ],
     )
@@ -28,16 +43,24 @@ def test_suite_audit_reports_provenance_risk_and_capability_surfaces() -> None:
     report = audit_suite(suite)
 
     assert report.suite == "governance-suite"
-    assert report.total_cases == 1
-    assert report.provenance_counts == {"public_benchmark_adapted": 1}
-    assert report.risk_counts == {"high": 1}
+    assert report.total_cases == 2
+    assert report.provenance_counts == {"public_benchmark_adapted": 2}
+    assert report.risk_counts == {"high": 1, "medium": 1}
     assert report.capability_surfaces["tool_schema_names"] == ["lookup_fixture"]
     assert report.capability_surfaces["simulated_tools"] == ["search_docs"]
     assert report.capability_surfaces["mcp_profiles"] == ["fixture-mcp"]
     assert report.capability_surfaces["skills"] == ["safe-tool-replay"]
-    assert report.capability_surfaces["response_format_cases"] == 1
-    assert report.capability_surfaces["streaming_cases"] == 1
-    assert {finding.code for finding in report.findings} == {"missing_source_url", "missing_license", "high_risk_case"}
+    assert report.capability_surfaces["response_format_cases"] == 2
+    assert report.capability_surfaces["streaming_cases"] == 2
+    assert report.capability_surfaces["cancellation_cases"] == 2
+    assert report.dataset_hygiene["duplicate_fingerprint_count"] == 1
+    assert report.dataset_hygiene["duplicate_case_groups"][0]["case_ids"] == ["external-case", "external-case-copy"]
+    assert {finding.code for finding in report.findings} == {
+        "missing_source_url",
+        "missing_license",
+        "high_risk_case",
+        "duplicate_case_fingerprint",
+    }
     assert "Suite audit is static" in report.security_notes[0]
 
 
@@ -59,4 +82,5 @@ def test_format_suite_audit_includes_findings() -> None:
 
     assert "suite: unnamed-tool-suite" in text
     assert "tool_schema_names: -" in text
+    assert "duplicate_fingerprints: 0" in text
     assert "unnamed_tool_schema" in text

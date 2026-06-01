@@ -1,6 +1,6 @@
 # Cache-Control And Prefill Diagnostics
 
-AgentBlaster supports case-level `cache_control` metadata for cache-aware benchmark planning. The first serialization target is Anthropic Messages-style cache control on static system prefixes.
+AgentBlaster supports case-level `cache_control` metadata for cache-aware benchmark planning. The first serialization targets are Anthropic Messages-style cache control on static system prefixes and the final tool-catalog entry.
 
 ## Built-In Suite
 
@@ -14,7 +14,7 @@ The built-in `cache-control` suite stresses repeated static system prefixes and 
 
 ## Provider Behavior
 
-Anthropic-compatible adapters serialize `cache_control` onto the static system block. OpenAI-compatible providers keep the metadata in suite definitions, prompt-footprint reports, and run manifests, but do not receive provider-specific cache-control fields.
+Anthropic-compatible adapters serialize `cache_control` onto the static system block and the final converted tool definition when tools are present. This makes both repeated instructions and repeated large tool catalogs visible as cache breakpoints. OpenAI-compatible providers keep the metadata in suite definitions, prompt-footprint reports, and run manifests, but do not receive provider-specific cache-control fields.
 
 Use provider metric coverage reports to distinguish native cache accounting from unavailable or inferred fields:
 

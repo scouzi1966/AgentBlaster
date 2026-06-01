@@ -23,6 +23,9 @@ class ModelTarget(BaseModel):
     parameter_count: str
     default_model: str
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
+    comparison_group: str
+    required_release_metadata: list[str] = Field(default_factory=list)
+    publication_guidance: list[str] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -38,6 +41,13 @@ MODEL_TARGETS: dict[str, ModelTarget] = {
             architecture="qwen3.6-dense",
             chat_template="qwen",
         ),
+        comparison_group="qwen3.6-27b-dense",
+        required_release_metadata=["model_id", "revision", "architecture", "quantization", "tokenizer", "chat_template", "context_length"],
+        publication_guidance=[
+            "Keep Qwen and Gemma targets in separate primary charts because chat templates, tokenizer behavior, and tool formatting differ.",
+            "Do not compare Qwen runs across engines as equivalent unless the revision and quantization class are disclosed.",
+            "Use matrix scorecard architecture and quantization rollups before making cross-engine claims.",
+        ],
         notes="Primary dense coding/agentic target for local MLX comparisons.",
     ),
     "gemma-4-31b-dense": ModelTarget(
@@ -51,6 +61,13 @@ MODEL_TARGETS: dict[str, ModelTarget] = {
             architecture="gemma-4-dense",
             chat_template="gemma",
         ),
+        comparison_group="gemma-4-31b-dense",
+        required_release_metadata=["model_id", "revision", "architecture", "quantization", "tokenizer", "chat_template", "context_length"],
+        publication_guidance=[
+            "Keep Gemma and Qwen targets in separate primary charts because chat templates, tokenizer behavior, and tool formatting differ.",
+            "Do not compare Gemma runs across engines as equivalent unless the revision and quantization class are disclosed.",
+            "Use matrix scorecard architecture and quantization rollups before making cross-engine claims.",
+        ],
         notes="Dense Gemma 4 quality target for local and remote-compatible comparisons.",
     ),
 }

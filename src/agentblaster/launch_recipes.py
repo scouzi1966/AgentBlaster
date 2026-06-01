@@ -20,6 +20,7 @@ class LaunchRecipeTemplate:
     native_adapter: str | None
     launch_command: tuple[str, ...]
     metrics_path: str | None = None
+    provider_headers: tuple[tuple[str, str], ...] = ()
     setup_commands: tuple[tuple[str, ...], ...] = ()
     notes: tuple[str, ...] = ()
 
@@ -89,6 +90,17 @@ LAUNCH_RECIPES: tuple[LaunchRecipeTemplate, ...] = (
         notes=("Use only when the LM Studio version/model exposes the Responses-compatible surface.",),
     ),
     LaunchRecipeTemplate(
+        engine="lm-studio-anthropic",
+        title="LM Studio Anthropic Messages-compatible server",
+        contract=ApiContract.ANTHROPIC,
+        default_port=1234,
+        base_path="/v1",
+        native_adapter=None,
+        provider_headers=(("anthropic-version", "2023-06-01"),),
+        launch_command=("lms", "server", "start", "--port", "{port}"),
+        notes=("Use only when the LM Studio version/model exposes the Anthropic Messages-compatible surface.",),
+    ),
+    LaunchRecipeTemplate(
         engine="lm-studio-native",
         title="LM Studio native REST server",
         contract=ApiContract.NATIVE,
@@ -127,6 +139,17 @@ LAUNCH_RECIPES: tuple[LaunchRecipeTemplate, ...] = (
         native_adapter=None,
         launch_command=("python", "-m", "vllm.entrypoints.openai.api_server", "--model", "{model}", "--host", "{host}", "--port", "{port}"),
         notes=("Use only with an installed vLLM-MLX environment and compatible model artifact.",),
+    ),
+    LaunchRecipeTemplate(
+        engine="vllm-mlx-anthropic",
+        title="vLLM-MLX Anthropic Messages-compatible server",
+        contract=ApiContract.ANTHROPIC,
+        default_port=8000,
+        base_path="/v1",
+        native_adapter=None,
+        provider_headers=(("anthropic-version", "2023-06-01"),),
+        launch_command=("python", "-m", "vllm.entrypoints.openai.api_server", "--model", "{model}", "--host", "{host}", "--port", "{port}"),
+        notes=("Use only with a vLLM-MLX build that exposes the Anthropic Messages-compatible API.",),
     ),
 )
 
@@ -175,6 +198,8 @@ def build_launch_recipe(
         provider_command.extend(["--metrics-url", metrics_url])
     if template.native_adapter:
         provider_command.extend(["--native-adapter", template.native_adapter])
+    for header_name, header_value in template.provider_headers:
+        provider_command.extend(["--header", f"{header_name}={header_value}"])
     return {
         "schema_version": "agentblaster.launch-recipe.v1",
         "engine": template.engine,
@@ -215,6 +240,7 @@ def launch_recipe_catalog() -> dict[str, Any]:
                 "contract": recipe.contract.value,
                 "default_port": recipe.default_port,
                 "native_adapter": recipe.native_adapter,
+                "provider_header_names": [name for name, _value in recipe.provider_headers],
                 "has_metrics_url": recipe.metrics_path is not None,
                 "notes": list(recipe.notes),
             }

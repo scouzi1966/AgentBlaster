@@ -46,9 +46,7 @@ def make_mock_provider_handler(settings: MockProviderSettings | None = None) -> 
             if path.endswith("/metrics") or path == "/metrics":
                 self._text(
                     HTTPStatus.OK,
-                    "agentblaster_mock_requests_total 1
-agentblaster_mock_ttft_ms 12
-",
+                    "agentblaster_mock_requests_total 1\nagentblaster_mock_ttft_ms 12\n",
                     content_type="text/plain; version=0.0.4; charset=utf-8",
                 )
                 return
@@ -80,9 +78,10 @@ agentblaster_mock_ttft_ms 12
             tool_name = _requested_tool_name(payload)
             if payload.get("stream"):
                 if tool_name:
+                    tool_arguments = json.dumps(_tool_arguments(payload, tool_name))
                     events = [
                         {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_mock", "type": "function", "function": {"name": tool_name}}]}}]},
-                        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": json.dumps({"target": _target_marker(payload)})}}]}}]},
+                        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": tool_arguments}}]}}]},
                     ]
                 else:
                     midpoint = max(len(text) // 2, 1)
@@ -101,7 +100,7 @@ agentblaster_mock_ttft_ms 12
                     {
                         "id": "call_mock",
                         "type": "function",
-                        "function": {"name": tool_name, "arguments": json.dumps({"target": _target_marker(payload)})},
+                        "function": {"name": tool_name, "arguments": json.dumps(_tool_arguments(payload, tool_name))},
                     }
                 ]
                 finish_reason = "tool_calls"
@@ -138,7 +137,7 @@ agentblaster_mock_ttft_ms 12
                                 "type": "response.function_call_arguments.delta",
                                 "item_id": "fc_mock",
                                 "output_index": 1,
-                                "delta": json.dumps({"target": _target_marker(payload)}),
+                                "delta": json.dumps(_tool_arguments(payload, tool_name)),
                             },
                         ]
                     )
@@ -159,7 +158,7 @@ agentblaster_mock_ttft_ms 12
                         "type": "function_call",
                         "call_id": "call_mock",
                         "name": tool_name,
-                        "arguments": json.dumps({"target": _target_marker(payload)}),
+                        "arguments": json.dumps(_tool_arguments(payload, tool_name)),
                     }
                 )
             self._json(
@@ -189,7 +188,7 @@ agentblaster_mock_ttft_ms 12
                         "type": "tool_use",
                         "id": "toolu_mock",
                         "name": tool_name,
-                        "input": {"target": _target_marker(payload)},
+                        "input": _tool_arguments(payload, tool_name),
                     }
                 )
                 stop_reason = "tool_use"
@@ -280,7 +279,7 @@ def _anthropic_stream_events(payload: dict[str, Any], *, text: str, tool_name: s
                 {
                     "type": "content_block_delta",
                     "index": 1,
-                    "delta": {"type": "input_json_delta", "partial_json": json.dumps({"target": _target_marker(payload)})},
+                    "delta": {"type": "input_json_delta", "partial_json": json.dumps(_tool_arguments(payload, tool_name))},
                 },
                 {"type": "content_block_stop", "index": 1},
             ]
@@ -360,8 +359,7 @@ def _payload_text(payload: dict[str, Any]) -> str:
                     for block in content:
                         if isinstance(block, dict) and isinstance(block.get("text"), str):
                             parts.append(block["text"])
-    return "
-".join(parts)
+    return "\n".join(parts)
 
 
 def _extract_exact_reply(text: str) -> str | None:
@@ -372,6 +370,9 @@ def _extract_exact_reply(text: str) -> str | None:
 
 
 def _requested_tool_name(payload: dict[str, Any]) -> str | None:
+    prompt_text = _payload_text(payload)
+    if _payload_has_tool_result(payload) and "agentblaster-loop-boundary-repeat" not in prompt_text:
+        return None
     tool_choice = payload.get("tool_choice")
     if isinstance(tool_choice, dict):
         function = tool_choice.get("function")
@@ -391,15 +392,68 @@ def _requested_tool_name(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _tool_arguments(payload: dict[str, Any], tool_name: str) -> dict[str, Any]:
+    if tool_name == "ping_agentblaster":
+        return {"target": _target_marker(payload)}
+    if tool_name == "route_agentblaster_task":
+        return {"route_id": _route_marker(payload), "confidence": "high"}
+    if tool_name == "search_agentblaster_notes":
+        return {"query": "AgentBlaster deterministic notes"}
+    if tool_name == "fetch_agentblaster_context":
+        return {"context_id": "agentblaster-fixture-context"}
+    if tool_name == "finalize_agentblaster_plan":
+        return {"summary": "agentblaster-route-ok"}
+    if tool_name == "mcp_fixture_read_resource":
+        return {"uri": _fixture_uri(payload)}
+    if tool_name == "mcp_fixture_call_tool":
+        return {"name": "status", "payload": {"value": "agentblaster-mcp-ok"}}
+    if tool_name == "mcp_fixture_list_prompts":
+        return {"namespace": "agentblaster"}
+    if tool_name.startswith("mcp_wide_tool_"):
+        return {"query": "agentblaster", "limit": 1}
+    return {"target": _target_marker(payload)}
+
+
 def _target_marker(payload: dict[str, Any]) -> str:
     text = _payload_text(payload)
     for pattern in (r"target set to ([A-Za-z0-9_.:-]+)", r"marker[:=]\s*([A-Za-z0-9_.:-]+)"):
         match = re.search(pattern, text)
         if match:
-            return match.group(1)
+            return match.group(1).rstrip(".;,")
     if "agentblaster-ok" in text:
         return "agentblaster-ok"
     return "agentblaster-mock-marker"
+
+
+def _route_marker(payload: dict[str, Any]) -> str:
+    text = _payload_text(payload)
+    for pattern in (r"route_id set to ([A-Za-z0-9_.:-]+)", r"route_id[:=]\s*([A-Za-z0-9_.:-]+)"):
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip().strip(".,`")
+    return "agentblaster-route-mock"
+
+
+def _fixture_uri(payload: dict[str, Any]) -> str:
+    text = _payload_text(payload)
+    match = re.search(r"uri\s+(fixture://[A-Za-z0-9_./:-]+)", text)
+    if match:
+        return match.group(1).strip().strip(".,`")
+    return "fixture://mcp/resource/status"
+
+
+def _payload_has_tool_result(value: Any) -> bool:
+    if isinstance(value, dict):
+        role = value.get("role")
+        item_type = value.get("type")
+        if role == "tool" or item_type == "tool_result":
+            return True
+        if value.get("tool_call_id") and "content" in value:
+            return True
+        return any(_payload_has_tool_result(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_payload_has_tool_result(item) for item in value)
+    return False
 
 
 def _wants_json(payload: dict[str, Any]) -> bool:

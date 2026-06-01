@@ -75,7 +75,7 @@ provenance:
 cases:
   - id: case-one
     title: Case one
-    prompt: Reply with exactly: agentblaster-ok
+    prompt: "Reply with exactly: agentblaster-ok"
 """,
         encoding="utf-8",
     )

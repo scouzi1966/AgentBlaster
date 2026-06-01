@@ -48,6 +48,7 @@ jobs:
       - name: CLI smoke
         run: |
           agentblaster version
+          agentblaster doctor --output-json test-reports/environment-readiness.json --fail-on-required-gaps
           agentblaster suites
           agentblaster validate-case examples/suites/smoke.yaml
           agentblaster quality tiers
@@ -101,6 +102,9 @@ jobs:
 
       - name: Generate release provenance and redaction scan
         run: |
+          mkdir -p test-reports/release test-reports/security
+          agentblaster doctor --output-json test-reports/release/environment-readiness.json --fail-on-required-gaps
+          agentblaster release packaging-readiness --output-json test-reports/release/packaging-readiness.json --fail-on-gaps
           agentblaster release provenance --output test-reports/release-provenance.json
           agentblaster security scan test-reports --output-json test-reports/security/redaction-scan.json
 

@@ -10,6 +10,8 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from agentblaster.config import ProviderStore
 from agentblaster.errors import ConfigError
+from agentblaster.harness import build_harness_review_report
+from agentblaster.lcp import lcp_profile_catalog
 from agentblaster.mcp import available_mcp_profiles, mcp_profile_tool_schemas
 from agentblaster.policy import load_policy
 from agentblaster.provider_audit import audit_providers
@@ -40,8 +42,10 @@ def create_evidence_bundle(
     artifacts: dict[str, bytes] = {}
 
     artifacts["suite-audit.json"] = _json_bytes(audit_suite(suite_definition).model_dump(mode="json"))
+    artifacts["harness-review.json"] = _json_bytes(build_harness_review_report(suite_definition))
     artifacts["catalogs/simulated-tools.json"] = _json_bytes(_simulated_tools_catalog())
     artifacts["catalogs/mcp-profiles.json"] = _json_bytes(_mcp_profiles_catalog())
+    artifacts["catalogs/lcp-profiles.json"] = _json_bytes(_lcp_profiles_catalog())
     artifacts["catalogs/skills.json"] = _json_bytes(_skills_catalog())
     artifacts["release-provenance.json"] = _json_bytes(_release_provenance(root))
     if policy is not None:
@@ -78,7 +82,7 @@ def create_evidence_bundle(
             "contains_raw_secrets": False,
             "contains_raw_provider_payloads": False,
             "contains_raw_traces": False,
-            "notes": "Static evidence bundle only. Does not contact providers, resolve secrets, or execute tools.",
+            "notes": "Static evidence bundle only. Does not contact providers, resolve secrets, execute tools, or include raw prompts in harness review artifacts.",
         },
     }
     artifacts["manifest.json"] = _json_bytes(manifest)
@@ -120,9 +124,14 @@ def _mcp_profiles_catalog() -> dict[str, Any]:
                 "tool_count": len(schemas),
                 "tool_names": [_tool_schema_display_name(schema) for schema in schemas],
                 "host_execution": False,
+                "deterministic_result_support": True,
             }
         )
     return {"catalog": "agentblaster.mcp-profiles", "items": items}
+
+
+def _lcp_profiles_catalog() -> dict[str, Any]:
+    return {"catalog": "agentblaster.lcp-profiles", "items": lcp_profile_catalog()}
 
 
 def _skills_catalog() -> dict[str, Any]:

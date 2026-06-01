@@ -4,12 +4,13 @@ from agentblaster.redaction import redact_mapping_headers, redact_text, redact_v
 
 
 def test_redact_text_removes_common_token_shapes() -> None:
-    text = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz and sk-testsecretvalue123456789"
+    text = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz and sk-testsecretvalue123456789 and sk-ant-api03-secretvalue123456789"
 
     redacted = redact_text(text)
 
     assert "abcdefghijklmnopqrstuvwxyz" not in redacted
     assert "sk-testsecretvalue" not in redacted
+    assert "sk-ant-api03" not in redacted
     assert "[REDACTED]" in redacted
 
 

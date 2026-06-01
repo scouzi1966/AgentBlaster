@@ -11,33 +11,88 @@ from agentblaster.errors import ConfigError
 from agentblaster.models import RunManifest
 
 
+CACHE_ARTIFACT_DIRS = ("cache", "caches", ".cache", "prompt-cache", "prompt-caches")
+TEMP_ARTIFACT_DIRS = ("tmp", "temp")
+BUNDLE_ARTIFACT_DIRS = ("publication-bundles", "matrix-publication-bundles", "release-bundles", "evidence-bundles")
+BUNDLE_ARTIFACT_PATTERNS = (
+    "*.agentblaster-publication.zip",
+    "*.agentblaster-matrix-publication.zip",
+    "*.agentblaster-release-qualification.zip",
+    "*.agentblaster-evidence.zip",
+)
+CLEANUP_PLAN_SCHEMA_VERSION = "agentblaster.cleanup-plan.v1"
+RETENTION_CLEANUP_SCHEMA_VERSION = "agentblaster.retention-cleanup.v1"
+
+
 def cleanup_run(
     run_dir: Path,
     *,
     raw: bool = True,
     reports: bool = False,
     exports: bool = False,
+    caches: bool = False,
+    temp: bool = False,
+    bundles: bool = False,
+    all_artifacts: bool = False,
+) -> list[Path]:
+    planned = plan_cleanup_run(
+        run_dir,
+        raw=raw,
+        reports=reports,
+        exports=exports,
+        caches=caches,
+        temp=temp,
+        bundles=bundles,
+        all_artifacts=all_artifacts,
+    )
+    for path in planned:
+        _delete_path(path)
+    return planned
+
+
+def plan_cleanup_run(
+    run_dir: Path,
+    *,
+    raw: bool = True,
+    reports: bool = False,
+    exports: bool = False,
+    caches: bool = False,
+    temp: bool = False,
+    bundles: bool = False,
     all_artifacts: bool = False,
 ) -> list[Path]:
     if not run_dir.exists():
         raise ConfigError(f"run directory does not exist: {run_dir}")
 
-    removed: list[Path] = []
+    planned: list[Path] = []
     if all_artifacts:
-        shutil.rmtree(run_dir)
         return [run_dir]
 
     if raw:
-        removed.extend(_remove_path(run_dir / "raw"))
+        planned.extend(_existing_path(run_dir / "raw"))
     if reports:
-        removed.extend(_remove_path(run_dir / "report.html"))
-        removed.extend(_remove_path(run_dir / "report.md"))
-        removed.extend(_remove_path(run_dir / "report-card.svg"))
-        removed.extend(_remove_path(run_dir / "publication.json"))
-        removed.extend(_remove_path(run_dir / "summary.json"))
+        planned.extend(_existing_path(run_dir / "report.html"))
+        planned.extend(_existing_path(run_dir / "report.md"))
+        planned.extend(_existing_path(run_dir / "report.pdf"))
+        planned.extend(_existing_path(run_dir / "report-card.svg"))
+        planned.extend(_existing_path(run_dir / "report-card.png"))
+        planned.extend(_existing_path(run_dir / "publication.json"))
+        planned.extend(_existing_path(run_dir / "summary.json"))
     if exports:
-        removed.extend(_remove_path(run_dir / "exports"))
-    return removed
+        planned.extend(_existing_path(run_dir / "exports"))
+    if caches:
+        for dirname in CACHE_ARTIFACT_DIRS:
+            planned.extend(_existing_path(run_dir / dirname))
+    if temp:
+        for dirname in TEMP_ARTIFACT_DIRS:
+            planned.extend(_existing_path(run_dir / dirname))
+    if bundles:
+        for dirname in BUNDLE_ARTIFACT_DIRS:
+            planned.extend(_existing_path(run_dir / dirname))
+        for pattern in BUNDLE_ARTIFACT_PATTERNS:
+            for path in sorted(run_dir.glob(pattern)):
+                planned.extend(_existing_path(path))
+    return planned
 
 
 class ExpiredCleanupAction(BaseModel):
@@ -113,14 +168,19 @@ def apply_expired_cleanup(actions: list[ExpiredCleanupAction]) -> list[ExpiredCl
     return applied
 
 
-def _remove_path(path: Path) -> list[Path]:
+def _existing_path(path: Path) -> list[Path]:
     if not path.exists():
         return []
-    if path.is_dir():
+    return [path]
+
+
+def _delete_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
         shutil.rmtree(path)
     else:
         path.unlink()
-    return [path]
 
 
 def _load_manifest_if_valid(run_dir: Path) -> RunManifest | None:

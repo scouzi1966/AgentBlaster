@@ -32,6 +32,17 @@ def test_benchmark_kit_generates_matrix_manifest_and_runbook(tmp_path) -> None:
     assert "model: mlx-community/Qwen3.6-27B" in matrix_text
     assert "model: google/gemma-4-31b" in matrix_text
     assert "agentblaster providers readiness --provider afm" in runbook
+    assert "agentblaster matrix contract-checks" in runbook
+    assert "agentblaster matrix scorecard" in runbook
+    assert "agentblaster matrix publication-bundle" in runbook
+    assert "contract_execute" in manifest["matrix_commands"]
+    assert "publication_bundle" in manifest["matrix_commands"]
+    assert "--max-tool-loop-stop-reason max_tool_calls_reached=0" in runbook
+    assert "--max-invalid-tool-calls 0" in runbook
+    assert "--min-tool-parser-repair-valid-rate 100" in runbook
+    assert "max_tool_calls_reached=0" in " ".join(manifest["matrix_commands"]["gate"])
+    assert "--max-invalid-tool-calls" in manifest["matrix_commands"]["gate"]
+    assert "--min-tool-parser-repair-valid-rate" in manifest["matrix_commands"]["gate"]
     assert "--offline --continue-on-error" in runbook
 
 

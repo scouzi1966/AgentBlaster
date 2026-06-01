@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -13,15 +14,30 @@ from agentblaster.adapters import adapter_for
 from agentblaster.agent_profiles import generate_agent_suite, list_agent_profiles, suite_to_yaml as agent_suite_to_yaml
 from agentblaster.audit import AuditLogger
 from agentblaster.benchmark_kit import create_benchmark_kit
-from agentblaster.bundle import create_publication_bundle, create_replay_bundle
+from agentblaster.bundle import create_matrix_publication_bundle, create_publication_bundle, create_replay_bundle
 from agentblaster.campaign import create_campaign_plan
+from agentblaster.campaign_preflight import create_campaign_preflight_bundle, format_campaign_preflight_bundle
 from agentblaster.capabilities import (
     CAPABILITY_DESCRIPTIONS,
     check_suite_compatibility,
     format_capability_report,
     suite_requirements,
 )
-from agentblaster.cleanup import apply_expired_cleanup, cleanup_run, plan_expired_cleanup
+from agentblaster.claim_readiness import build_claim_readiness, format_claim_readiness, write_claim_readiness_json
+from agentblaster.publication_brief import (
+    build_publication_brief,
+    format_publication_brief,
+    write_publication_brief_json,
+    write_publication_brief_markdown,
+)
+from agentblaster.cleanup import (
+    CLEANUP_PLAN_SCHEMA_VERSION,
+    RETENTION_CLEANUP_SCHEMA_VERSION,
+    apply_expired_cleanup,
+    cleanup_run,
+    plan_cleanup_run,
+    plan_expired_cleanup,
+)
 from agentblaster.compare import (
     compare_runs,
     evaluate_comparison_gate,
@@ -32,19 +48,34 @@ from agentblaster.compare import (
 )
 from agentblaster.config import ProviderStore
 from agentblaster.contract_check import (
+    build_provider_contract_matrix,
+    format_contract_check_matrix_report,
     format_contract_check_report,
     provider_contract_plan,
     run_provider_contract_check,
     write_contract_check_json,
+    write_contract_check_matrix_json,
 )
 from agentblaster.costs import estimate_costs
 from agentblaster.dashboard import assert_dashboard_bind_allowed, serve_dashboard
-from agentblaster.errors import AgentBlasterError, PolicyError
+from agentblaster.errors import AgentBlasterError, ConfigError, PolicyError
 from agentblaster.evidence import create_evidence_bundle
+from agentblaster.evidence_index import build_evidence_index, format_evidence_index, write_evidence_index
+from agentblaster.environment import build_environment_readiness, format_environment_readiness, write_environment_readiness
+from agentblaster.engine_advisory import (
+    build_engine_improvement_advisory,
+    format_engine_improvement_advisory,
+    write_engine_improvement_advisory,
+)
 from agentblaster.engine_targets import (
     engine_target_catalog_json,
     format_engine_target_catalog,
     get_engine_target,
+)
+from agentblaster.engine_onboarding import (
+    build_local_engine_onboarding,
+    format_local_engine_onboarding_markdown,
+    write_local_engine_onboarding,
 )
 from agentblaster.exports import export_results
 from agentblaster.experiment import (
@@ -55,7 +86,18 @@ from agentblaster.experiment import (
     write_experiment_json,
 )
 from agentblaster.fixtures import write_dashboard_fixture
-from agentblaster.harness import generate_harness_suite, list_harness_profiles, suite_to_yaml
+from agentblaster.harness import (
+    build_harness_review_report,
+    format_harness_review_report,
+    generate_harness_suite,
+    list_harness_profiles,
+    suite_to_yaml,
+)
+from agentblaster.implementation_status import (
+    build_implementation_status,
+    format_implementation_status,
+    write_implementation_status,
+)
 from agentblaster.integrity import sign_run_integrity, verify_run_integrity, verify_run_signature
 from agentblaster.lcp import available_lcp_profiles, lcp_profile_catalog
 from agentblaster.launch_recipes import (
@@ -66,6 +108,12 @@ from agentblaster.launch_recipes import (
 )
 from agentblaster.matrix import MatrixExecutionRunSummary, MatrixExecutionSummary, load_matrix_file
 from agentblaster.matrix_gate import evaluate_matrix_gate, format_matrix_gate_report, write_matrix_gate_json
+from agentblaster.matrix_pressure import audit_matrix_pressure, format_matrix_pressure_report, write_matrix_pressure_json
+from agentblaster.matrix_saturation import (
+    build_matrix_saturation_report,
+    format_matrix_saturation_report,
+    write_matrix_saturation_json,
+)
 from agentblaster.mcp import available_mcp_profiles, mcp_profile_tool_schemas
 from agentblaster.metric_coverage import (
     format_metric_coverage_report,
@@ -77,15 +125,24 @@ from agentblaster.mock_provider import MockProviderSettings, serve_mock_provider
 from agentblaster.model_catalog import generate_matrix_template, get_model_target, list_model_targets, matrix_to_yaml
 from agentblaster.models import ApiContract, ModelMetadata, ProviderConfig, RawTraceMode, RetentionPolicy, RunSummary, SecretRef
 from agentblaster.policy import (
+    enterprise_policy_template,
+    enterprise_policy_template_yaml,
     enforce_dashboard_policy,
     enforce_matrix_policy,
     enforce_provider_policy,
     estimate_case_prompt_tokens,
     load_policy,
     offline_policy,
+    policy_control_summary,
 )
 from agentblaster.planning import RunPlan, build_run_plan, format_run_plan
 from agentblaster.presets import PROVIDER_PRESETS, get_preset
+from agentblaster.protocol_repair import (
+    build_protocol_repair_posture,
+    format_protocol_repair_posture,
+    write_protocol_repair_posture_json,
+    write_protocol_repair_posture_markdown,
+)
 from agentblaster.prompt_footprint import (
     format_prompt_footprint_report,
     suite_prompt_footprint,
@@ -100,6 +157,8 @@ from agentblaster.quality import (
     list_test_tiers,
     render_sdlc_gate_catalog_json,
     render_sdlc_gate_catalog_markdown,
+    render_sdlc_validation_manifest_json,
+    render_sdlc_validation_manifest_markdown,
     render_chrome_gui_plan_json,
     render_chrome_gui_plan_markdown,
     render_chrome_validation_markdown,
@@ -109,7 +168,7 @@ from agentblaster.quality import (
     run_selftest_command,
     write_gui_test_artifacts,
 )
-from agentblaster.release import write_release_provenance
+from agentblaster.release import format_packaging_readiness, write_packaging_readiness, write_release_provenance
 from agentblaster.release_qualification import create_release_qualification_bundle
 from agentblaster.redaction_scan import format_redaction_scan_report, redaction_scan_json, scan_paths
 from agentblaster.remote_onboarding import (
@@ -118,9 +177,21 @@ from agentblaster.remote_onboarding import (
     remote_provider_onboarding_json,
     write_remote_provider_onboarding,
 )
-from agentblaster.reports import generate_matrix_reports, generate_matrix_scorecard_reports, generate_reports
+from agentblaster.reports import (
+    generate_matrix_reports,
+    generate_matrix_scorecard_reports,
+    generate_reports,
+    load_matrix_execution_summary,
+)
 from agentblaster.runner import BenchmarkRunner
-from agentblaster.secrets import SecretResolver
+from agentblaster.schema_registry import artifact_schema_registry_json, format_artifact_schema_registry_markdown
+from agentblaster.security_posture import (
+    build_security_posture_report,
+    format_security_posture_report,
+    write_security_posture_json,
+    write_security_posture_markdown,
+)
+from agentblaster.secrets import SecretResolver, dotenv_ref_name
 from agentblaster.skills import available_skill_packs, skill_pack_text
 from agentblaster.stress_matrix import generate_stress_matrix, stress_matrix_summary, stress_matrix_to_yaml
 from agentblaster.suites import BUILTIN_SUITES, get_builtin_suite, load_suite_file, validate_case_or_suite_file
@@ -134,12 +205,22 @@ from agentblaster.suite_calibration import (
 )
 from agentblaster.toolsim import SAFE_TOOL_SCHEMAS
 from agentblaster.telemetry import (
+    format_normalized_response_telemetry,
     format_telemetry_mapping_catalog,
+    normalized_response_telemetry_json,
+    normalize_response_telemetry,
     telemetry_mapping_catalog_json,
 )
+from agentblaster.telemetry_audit import audit_run_telemetry, format_telemetry_audit, write_telemetry_audit_json
 from agentblaster.workflow_surfaces import (
     workflow_surface_catalog_json,
     workflow_surface_catalog_markdown,
+)
+from agentblaster.workflow_readiness import (
+    build_workflow_readiness_report,
+    format_workflow_readiness_report,
+    write_workflow_readiness_json,
+    write_workflow_readiness_markdown,
 )
 
 app = typer.Typer(help="AgentBlaster local agentic benchmark suite.")
@@ -187,10 +268,12 @@ BUILT_IN_ENGINES = [
     "ollama-native",
     "lm-studio",
     "lm-studio-responses",
+    "lm-studio-anthropic",
     "lm-studio-native",
     "omlx",
     "rapid-mlx",
     "vllm-mlx",
+    "vllm-mlx-anthropic",
 ]
 
 
@@ -202,6 +285,54 @@ def version() -> None:
     typer.echo(__version__)
 
 
+@app.command()
+def doctor(
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for static environment readiness.")] = None,
+    home: Annotated[Path | None, typer.Option(help="Optional AgentBlaster config home to report instead of the default.")] = None,
+    policy: Annotated[Path | None, typer.Option(help="Optional security policy path to summarize as redacted readiness controls.")] = None,
+    fail_on_required_gaps: Annotated[
+        bool,
+        typer.Option("--fail-on-required-gaps/--no-fail-on-required-gaps", help="Exit non-zero if required runtime readiness checks fail."),
+    ] = False,
+) -> None:
+    """Report static local runtime readiness without contacting providers or resolving secrets."""
+    security_policy = load_policy(policy)
+    if output_json is not None:
+        path = write_environment_readiness(output_json, home=home, policy=security_policy)
+        try:
+            report_payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    else:
+        report_payload = build_environment_readiness(home=home, policy=security_policy)
+        path = None
+    typer.echo(format_environment_readiness(report_payload), nl=False)
+    if path is not None:
+        typer.echo(str(path))
+    if fail_on_required_gaps and not report_payload["ok"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("implementation-status")
+def implementation_status_command(
+    project_root: Annotated[Path, typer.Option(help="Project root to inspect for static implementation evidence.")] = Path("."),
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the implementation status artifact.")] = None,
+) -> None:
+    """Report static implementation coverage without running tests or contacting providers."""
+    if output_json is not None:
+        path = write_implementation_status(output_json, project_root=project_root)
+        try:
+            report_payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    else:
+        report_payload = build_implementation_status(project_root=project_root)
+        path = None
+    typer.echo(format_implementation_status(report_payload), nl=False)
+    if path is not None:
+        typer.echo(str(path))
+
+
 @selftest_app.callback(invoke_without_command=True)
 def selftest(
     ctx: typer.Context,
@@ -209,12 +340,13 @@ def selftest(
     dry_run: Annotated[bool, typer.Option(help="Print the planned test command without executing it.")] = False,
     report_dir: Annotated[Path | None, typer.Option(help="Optional directory for selftest execution metadata.")] = None,
     junit_xml: Annotated[Path | None, typer.Option(help="Optional pytest JUnit XML output path.")] = None,
+    run_id: Annotated[str | None, typer.Option(help="Optional stable selftest run id for deterministic release evidence paths.")] = None,
 ) -> None:
     """Run AgentBlaster's own SDLC test harness."""
     if ctx.invoked_subcommand is not None:
         return
     try:
-        command = build_selftest_command(tier, report_dir=report_dir, junit_xml=junit_xml)
+        command = build_selftest_command(tier, report_dir=report_dir, junit_xml=junit_xml, run_id=run_id)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     if dry_run:
@@ -230,6 +362,7 @@ def selftest_gui(
     dry_run: Annotated[bool, typer.Option(help="Print the planned GUI test command without executing it.")] = False,
     report_dir: Annotated[Path | None, typer.Option(help="Optional directory for selftest execution metadata.")] = None,
     junit_xml: Annotated[Path | None, typer.Option(help="Optional pytest JUnit XML output path.")] = None,
+    run_id: Annotated[str | None, typer.Option(help="Optional stable selftest run id for deterministic release evidence paths.")] = None,
 ) -> None:
     """Run or plan dashboard GUI tests."""
     command = build_selftest_command(
@@ -238,6 +371,7 @@ def selftest_gui(
         headed=headed,
         report_dir=report_dir,
         junit_xml=junit_xml,
+        run_id=run_id,
     )
     if dry_run:
         typer.echo(render_selftest_plan(command), nl=False)
@@ -277,6 +411,134 @@ def mock_provider(
         port=port,
         settings=MockProviderSettings(profile=profile, latency_ms=latency_ms, require_auth=require_auth),
     )
+
+
+@engines_app.command("improvement-plan")
+def engines_improvement_plan(
+    engine: Annotated[str, typer.Option(help="Engine/provider name to generate improvement priorities for.")] = "afm",
+    pressure_audit: Annotated[list[Path] | None, typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    matrix_saturation_report: Annotated[list[Path] | None, typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
+    provider_contract_check: Annotated[list[Path] | None, typer.Option(help="Provider contract-check JSON artifact. Can be repeated.")] = None,
+    provider_contract_matrix: Annotated[list[Path] | None, typer.Option(help="Provider contract-check matrix JSON artifact. Can be repeated.")] = None,
+    telemetry_audit: Annotated[list[Path] | None, typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
+    metric_coverage: Annotated[list[Path] | None, typer.Option(help="Metric coverage JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    comparison_gate: Annotated[list[Path] | None, typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[list[Path] | None, typer.Option(help="Harness review JSON artifact for generated suites. Can be repeated.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional engine improvement advisory JSON output path.")] = None,
+) -> None:
+    """Create a no-dispatch engine improvement plan from benchmark evidence artifacts."""
+    try:
+        report = build_engine_improvement_advisory(
+            engine=engine,
+            pressure_audits=pressure_audit,
+            telemetry_audits=telemetry_audit,
+            metric_coverage_reports=metric_coverage,
+            matrix_gates=matrix_gate,
+            comparison_gates=comparison_gate,
+            matrix_saturation_reports=matrix_saturation_report,
+            provider_contract_checks=provider_contract_check,
+            provider_contract_matrices=provider_contract_matrix,
+            harness_reviews=harness_review,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json is not None:
+        typer.echo(str(write_engine_improvement_advisory(report, output_json)))
+    typer.echo(format_engine_improvement_advisory(report), nl=False)
+
+
+@evidence_app.command("campaign-preflight")
+def campaign_preflight_bundle_command(
+    matrix: Annotated[
+        list[Path] | None,
+        typer.Option("--matrix", help="Matrix file to inventory. Repeat for multi-matrix campaigns."),
+    ] = None,
+    output_dir: Annotated[Path, typer.Option(help="Directory where the preflight bundle folder is written.")] = Path("campaign-preflight"),
+    policy: Annotated[Path | None, typer.Option(help="Optional reviewed policy file to include and normalize.")] = None,
+    project_root: Annotated[Path, typer.Option(help="Project root for implementation and packaging readiness.")] = Path("."),
+    home: Annotated[Path | None, typer.Option(help="Optional AgentBlaster config home to report in environment readiness.")] = None,
+    include_provider_audit: Annotated[
+        bool,
+        typer.Option("--include-provider-audit/--no-provider-audit", help="Include redacted provider inventory and policy audit."),
+    ] = True,
+    benchmark_readiness: Annotated[
+        list[Path] | None,
+        typer.Option("--benchmark-readiness", help="Benchmark readiness dossier JSON artifact to summarize. Can be repeated."),
+    ] = None,
+    benchmark_readiness_list: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--benchmark-readiness-list",
+            help="Text file with one benchmark readiness dossier JSON path per line. Can be repeated.",
+        ),
+    ] = None,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
+) -> None:
+    """Create a no-dispatch campaign readiness folder before executing matrices."""
+    if not matrix:
+        raise typer.BadParameter("provide at least one --matrix")
+    resolved_benchmark_readiness = _benchmark_readiness_paths(benchmark_readiness, benchmark_readiness_list)
+    audit = AuditLogger(audit_log)
+    audit.emit(
+        "campaign_preflight_bundle_requested",
+        matrix_count=len(matrix),
+        output_dir=str(output_dir),
+        policy_path=str(policy) if policy else None,
+        include_provider_audit=include_provider_audit,
+        benchmark_readiness_reports=[str(item) for item in resolved_benchmark_readiness or []],
+        benchmark_readiness_lists=[str(item) for item in benchmark_readiness_list or []],
+    )
+    try:
+        bundle = create_campaign_preflight_bundle(
+            output_dir=output_dir,
+            matrices=matrix,
+            policy=policy,
+            project_root=project_root,
+            home=home,
+            include_provider_audit=include_provider_audit,
+            benchmark_readiness_reports=resolved_benchmark_readiness,
+        )
+    except AgentBlasterError as exc:
+        audit.emit("campaign_preflight_bundle_failed", output_dir=str(output_dir), reason=str(exc))
+        raise typer.BadParameter(str(exc)) from exc
+    audit.emit(
+        "campaign_preflight_bundle_created",
+        output_dir=str(bundle.output_dir),
+        manifest_path=str(bundle.manifest_path),
+        matrix_count=bundle.manifest["matrix_count"],
+        artifact_count=bundle.manifest["artifact_count"],
+    )
+    typer.echo(format_campaign_preflight_bundle(bundle), nl=False)
+
+
+def _benchmark_readiness_paths(paths: list[Path] | None, list_files: list[Path] | None) -> list[Path] | None:
+    resolved = list(paths or [])
+    for list_file in list_files or []:
+        list_file = list_file.expanduser()
+        try:
+            lines = list_file.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise typer.BadParameter(f"cannot read --benchmark-readiness-list {list_file}: {exc}") from exc
+        for line_number, raw_line in enumerate(lines, start=1):
+            value = raw_line.strip()
+            if not value or value.startswith("#"):
+                continue
+            if "\0" in value:
+                raise typer.BadParameter(f"invalid NUL byte in --benchmark-readiness-list {list_file}:{line_number}")
+            if " #" in value or "\t#" in value:
+                raise typer.BadParameter(
+                    f"inline comments are not supported in --benchmark-readiness-list {list_file}:{line_number}"
+                )
+            if value[0] in {"'", '"'} or value[-1] in {"'", '"'}:
+                raise typer.BadParameter(
+                    f"quoted paths are not supported in --benchmark-readiness-list {list_file}:{line_number}"
+                )
+            entry_path = Path(value).expanduser()
+            if not entry_path.is_absolute():
+                entry_path = list_file.parent / entry_path
+            resolved.append(entry_path)
+    return resolved or None
 
 
 @app.command()
@@ -489,7 +751,16 @@ def _run_matrix(
             )
         else:
             summary = summary_or_plan
-            run_summaries.append(_matrix_execution_run_summary(index, run_entry, summary))
+            summary_base_dir = matrix_summary_json.parent if matrix_summary_json is not None else Path(".")
+            run_summaries.append(
+                _matrix_execution_run_summary(
+                    index,
+                    run_entry,
+                    summary,
+                    output_dir=output_dir,
+                    summary_base_dir=summary_base_dir,
+                )
+            )
             typer.echo(f"[{index}/{len(matrix_definition.runs)}] {summary.run_id} {summary.provider} {summary.suite} ok={summary.failed == 0}")
     if dry_run and plan_json is not None:
         _write_plan_json(plans, plan_json)
@@ -503,12 +774,23 @@ def _run_matrix(
         )
 
 
-def _matrix_execution_run_summary(index: int, run_entry, summary: RunSummary) -> MatrixExecutionRunSummary:
-    manifest_path = Path(summary.manifest_path)
+def _matrix_execution_run_summary(
+    index: int,
+    run_entry,
+    summary: RunSummary,
+    *,
+    output_dir: Path = Path("runs"),
+    summary_base_dir: Path = Path("."),
+) -> MatrixExecutionRunSummary:
+    run_dir = output_dir / summary.run_id
+    results_path = _matrix_summary_artifact_path(run_dir / Path(summary.results_path).name, summary_base_dir)
+    manifest_path = _matrix_summary_artifact_path(run_dir / Path(summary.manifest_path).name, summary_base_dir)
+    summary_path = _matrix_summary_artifact_path(run_dir / "summary.json", summary_base_dir)
     return MatrixExecutionRunSummary(
         index=index,
         engine=run_entry.engine,
         provider=summary.provider,
+        engine_target=_matrix_run_engine_target(run_dir / "manifest.json"),
         model=summary.model,
         suite=summary.suite,
         suite_file=str(run_entry.suite_file) if run_entry.suite_file is not None else None,
@@ -518,10 +800,37 @@ def _matrix_execution_run_summary(index: int, run_entry, summary: RunSummary) ->
         passed=summary.passed,
         failed=summary.failed,
         concurrency=summary.concurrency,
-        results_path=summary.results_path,
-        manifest_path=summary.manifest_path,
-        summary_path=str(manifest_path.with_name("summary.json")),
+        results_path=results_path,
+        manifest_path=manifest_path,
+        summary_path=summary_path,
     )
+
+
+def _matrix_summary_artifact_path(path: Path, summary_base_dir: Path) -> str:
+    try:
+        return os.path.relpath(path, start=summary_base_dir)
+    except ValueError:
+        return str(path)
+
+
+def _matrix_run_engine_target(manifest_path: Path) -> dict | None:
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    engine_target = payload.get("engine_target") if isinstance(payload, dict) else None
+    if not isinstance(engine_target, dict):
+        return None
+    standardization = engine_target.get("standardization")
+    return {
+        "id": engine_target.get("id"),
+        "display_name": engine_target.get("display_name"),
+        "standardization": {
+            "primary_scoring_contract": (
+                standardization.get("primary_scoring_contract") if isinstance(standardization, dict) else None
+            )
+        },
+    }
 
 
 def _matrix_total_cases(matrix_definition) -> int:
@@ -840,6 +1149,55 @@ def policy_validate(
     typer.echo(f"fields: {len(payload)}")
 
 
+@policy_app.command("template")
+def policy_template(
+    output: Annotated[Path | None, typer.Option(help="Optional YAML output path for the enterprise policy template.")] = None,
+    profile: Annotated[str, typer.Option(help="Template profile: local or remote-gateway.")] = "local",
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path with template metadata.")] = None,
+) -> None:
+    """Generate a strict enterprise policy template without reading secrets or contacting providers."""
+    if profile not in {"local", "remote-gateway"}:
+        raise typer.BadParameter("profile must be local or remote-gateway")
+    payload = enterprise_policy_template(profile=profile)  # type: ignore[arg-type]
+    rendered = enterprise_policy_template_yaml(profile=profile)  # type: ignore[arg-type]
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
+        typer.echo(str(output))
+    if output_json is not None:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        typer.echo(str(output_json))
+    if output is None and output_json is None:
+        typer.echo(rendered, nl=False)
+
+
+@policy_app.command("controls")
+def policy_controls(
+    path: Annotated[Path, typer.Argument(help="Policy YAML file to summarize.")],
+    name: Annotated[str, typer.Option(help="Review name for the policy summary.")] = "policy",
+    output_json: Annotated[Path | None, typer.Option(help="Optional policy-control summary JSON output path.")] = None,
+) -> None:
+    """Summarize enterprise policy controls without resolving secrets or dispatching providers."""
+    try:
+        security_policy = load_policy(path)
+        summary = policy_control_summary(security_policy, name=name)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json is not None:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        typer.echo(str(output_json))
+    typer.echo(f"policy: {path}")
+    typer.echo(f"enterprise_ready: {str(summary['enterprise_ready']).lower()}")
+    typer.echo(
+        f"controls: enabled={summary['summary']['enabled_controls']}/{summary['summary']['control_count']} "
+        f"blockers={summary['summary']['blockers']} warnings={summary['summary']['warnings']}"
+    )
+    if summary["blockers"]:
+        typer.echo("blockers: " + ", ".join(summary["blockers"]))
+
+
 @app.command("suites")
 def list_suites() -> None:
     """List built-in benchmark suites."""
@@ -947,7 +1305,7 @@ def report(
     run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
     format: Annotated[
         str,
-        typer.Option(help="Comma-separated formats: html,md,json,publication,card."),
+        typer.Option(help="Comma-separated formats: html,md,json,publication,card,png,pdf."),
     ] = "html,json",
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for report export events.")] = None,
 ) -> None:
@@ -999,7 +1357,7 @@ def agents_suite(
 def models_stress_matrix(
     providers: Annotated[str, typer.Option(help="Comma-separated provider names for the matrix.")],
     targets: Annotated[str, typer.Option(help="Comma-separated model target ids for the matrix.")] = "qwen3.6-27b-dense,gemma-4-31b-dense",
-    suites: Annotated[str, typer.Option(help="Comma-separated built-in suite names to stress.")] = "prefill,trace-replay",
+    suites: Annotated[str, typer.Option(help="Comma-separated built-in suite names to stress.")] = "agentic-tool-loop,agent-fanout,prefill,harness-engineering,trace-replay",
     concurrency_levels: Annotated[str, typer.Option(help="Comma-separated concurrency levels, for example 1,2,4,8.")] = "1,2,4,8",
     output: Annotated[Path, typer.Option(help="Output matrix YAML path.")] = Path("examples/matrices/stress-qwen-gemma.yaml"),
     summary_json: Annotated[Path | None, typer.Option(help="Optional JSON summary path for the generated matrix.")] = None,
@@ -1033,7 +1391,7 @@ def models_campaign_plan(
     output_dir: Annotated[Path, typer.Option(help="Output directory for the campaign plan.")] = Path("campaigns/qwen-gemma-local"),
     providers: Annotated[str, typer.Option(help="Comma-separated provider names for the campaign.")] = "afm,mlx-lm,ollama,ollama-native,lm-studio,rapid-mlx,omlx",
     targets: Annotated[str, typer.Option(help="Comma-separated model target ids for the campaign.")] = "qwen3.6-27b-dense,gemma-4-31b-dense",
-    suites: Annotated[str, typer.Option(help="Comma-separated built-in suite names for the campaign.")] = "smoke,structured,toolcall,toolsim,trace-replay,prefill,cache-control,lcp-context",
+    suites: Annotated[str, typer.Option(help="Comma-separated built-in suite names for the campaign.")] = "smoke,structured,toolcall,toolsim,trace-replay,agent-fanout,prefill,cache-control,cancellation,lcp-context",
     concurrency: Annotated[int, typer.Option(help="Matrix concurrency per run.")] = 1,
     policy: Annotated[Path | None, typer.Option(help="Optional policy path referenced by generated commands.")] = None,
     name: Annotated[str | None, typer.Option(help="Optional campaign and matrix name.")] = None,
@@ -1096,7 +1454,7 @@ def matrix_report(
     summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
     format: Annotated[
         str,
-        typer.Option(help="Comma-separated formats: html,md,json."),
+        typer.Option(help="Comma-separated formats: html,md,json,pdf."),
     ] = "html,md,json",
     output_dir: Annotated[Path | None, typer.Option(help="Optional directory where matrix reports are written.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix report export events.")] = None,
@@ -1118,12 +1476,72 @@ def matrix_report(
         typer.echo(str(path))
 
 
+@matrix_app.command("pressure-audit")
+def matrix_pressure_audit(
+    matrix: Annotated[Path, typer.Argument(help="Matrix YAML file to inspect without dispatch.")],
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the pressure audit.")] = None,
+) -> None:
+    """Audit matrix-level prompt, prefill, static-prefix, and concurrency pressure."""
+    try:
+        report = audit_matrix_pressure(matrix)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json is not None:
+        typer.echo(str(write_matrix_pressure_json(report, output_json)))
+    typer.echo(format_matrix_pressure_report(report), nl=False)
+
+
+@matrix_app.command("contract-checks")
+def matrix_contract_checks(
+    matrix: Annotated[Path, typer.Argument(help="Matrix YAML file whose provider/model targets should be checked.")],
+    execute: Annotated[bool, typer.Option(help="Execute checks. Without this flag the command only prints a no-network plan.")] = False,
+    allow_remote: Annotated[bool, typer.Option(help="Allow executing checks against providers marked remote.")] = False,
+    skip_streaming: Annotated[bool, typer.Option(help="Skip streaming contract checks.")] = False,
+    skip_structured: Annotated[bool, typer.Option(help="Skip structured-output contract checks.")] = False,
+    skip_tools: Annotated[bool, typer.Option(help="Skip tool-call contract checks.")] = False,
+    timeout: Annotated[float, typer.Option(help="Per-request timeout in seconds when executing checks.")] = 10.0,
+    fail_fast: Annotated[bool, typer.Option(help="Stop on the first provider/model target error.")] = False,
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the contract-check matrix report.")] = None,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix contract-check events.")] = None,
+) -> None:
+    """Plan or execute standardized provider contract checks for every unique matrix target."""
+    try:
+        report = build_provider_contract_matrix(
+            matrix,
+            execute=execute,
+            allow_remote=allow_remote,
+            include_streaming=not skip_streaming,
+            include_structured=not skip_structured,
+            include_tools=not skip_tools,
+            timeout=timeout,
+            continue_on_error=not fail_fast,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    artifacts: list[str] = []
+    if output_json is not None:
+        artifacts.append(str(write_contract_check_matrix_json(report, output_json)))
+    AuditLogger(audit_log).emit(
+        "matrix_contract_checks_created",
+        matrix=str(matrix),
+        mode=report["mode"],
+        ok=report["ok"],
+        target_count=report["summary"]["targets"],
+        artifacts=artifacts,
+    )
+    if output_json is not None:
+        typer.echo(str(output_json))
+    typer.echo(format_contract_check_matrix_report(report), nl=False)
+    if execute and not report["ok"]:
+        raise typer.Exit(1)
+
+
 @matrix_app.command("scorecard")
 def matrix_scorecard(
     summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
     format: Annotated[
         str,
-        typer.Option(help="Comma-separated formats: html,md,json."),
+        typer.Option(help="Comma-separated formats: html,md,json,card,png,pdf."),
     ] = "html,md,json",
     output_dir: Annotated[Path | None, typer.Option(help="Optional directory where matrix scorecards are written.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix scorecard export events.")] = None,
@@ -1145,6 +1563,76 @@ def matrix_scorecard(
         typer.echo(str(path))
 
 
+@matrix_app.command("publication-bundle")
+def matrix_publication_bundle(
+    summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
+    report_dir: Annotated[Path | None, typer.Option(help="Directory containing matrix report and scorecard artifacts. Defaults to summary JSON directory.")] = None,
+    output_dir: Annotated[Path | None, typer.Option(help="Directory for the matrix publication bundle.")] = None,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix publication bundle events.")] = None,
+) -> None:
+    """Create a shareable bundle containing only redacted matrix publication artifacts."""
+    try:
+        path = create_matrix_publication_bundle(summary_json, report_dir=report_dir, output_dir=output_dir)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    AuditLogger(audit_log).emit(
+        "matrix_publication_bundle_created",
+        summary_json=str(summary_json),
+        report_dir=str(report_dir) if report_dir else None,
+        output_dir=str(output_dir) if output_dir else None,
+        artifact=str(path),
+    )
+    typer.echo(str(path))
+
+
+@matrix_app.command("saturation-report")
+def matrix_saturation_report(
+    summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the saturation report.")] = None,
+    max_latency_regression_pct: Annotated[
+        float,
+        typer.Option(help="Warn when average or p95 latency increases by more than this percentage from the lowest concurrency baseline."),
+    ] = 50.0,
+    max_decode_drop_pct: Annotated[
+        float,
+        typer.Option(help="Warn when decode throughput drops by more than this percentage from the lowest concurrency baseline."),
+    ] = 25.0,
+    max_pass_rate_drop_pct: Annotated[
+        float,
+        typer.Option(help="Record an error finding when pass rate drops by more than this percentage from the lowest concurrency baseline."),
+    ] = 5.0,
+    queue_warning_ms: Annotated[
+        float,
+        typer.Option(help="Warn when queue or rate-limit wait reaches this average milliseconds threshold."),
+    ] = 50.0,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix saturation report events.")] = None,
+) -> None:
+    """Analyze executed matrix results for concurrency saturation and queueing regressions."""
+    try:
+        report = build_matrix_saturation_report(
+            summary_json,
+            max_latency_regression_pct=max_latency_regression_pct,
+            max_decode_drop_pct=max_decode_drop_pct,
+            max_pass_rate_drop_pct=max_pass_rate_drop_pct,
+            queue_warning_ms=queue_warning_ms,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    artifacts: list[str] = []
+    if output_json is not None:
+        artifacts.append(str(write_matrix_saturation_json(report, output_json)))
+    AuditLogger(audit_log).emit(
+        "matrix_saturation_report_exported",
+        summary_json=str(summary_json),
+        output_json=str(output_json) if output_json else None,
+        artifacts=artifacts,
+        finding_count=report["summary"]["finding_count"],
+    )
+    if output_json is not None:
+        typer.echo(str(output_json))
+    typer.echo(format_matrix_saturation_report(report), nl=False)
+
+
 @matrix_app.command("gate")
 def matrix_gate(
     summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
@@ -1157,6 +1645,72 @@ def matrix_gate(
     min_attempted_runs: Annotated[int | None, typer.Option(help="Minimum required attempted matrix entries.")] = None,
     min_case_pass_rate: Annotated[float | None, typer.Option(help="Minimum aggregate case pass rate percentage.")] = None,
     max_failed_cases: Annotated[int | None, typer.Option(help="Maximum allowed failed benchmark cases across the matrix.")] = None,
+    max_failure_class: Annotated[
+        list[str] | None,
+        typer.Option(
+            help=(
+                "Maximum allowed failures for a failure class, formatted as class=count. "
+                "Repeat for multiple classes, for example engine_protocol_bug=0."
+            )
+        ),
+    ] = None,
+    include_failure_class_summary: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Read referenced normalized results and include observed failure-class counts "
+                "without enforcing failure-class thresholds."
+            )
+        ),
+    ] = False,
+    max_tool_loop_stop_reason: Annotated[
+        list[str] | None,
+        typer.Option(
+            help=(
+                "Maximum allowed tool-loop stop reason count, formatted as reason=count. "
+                "Repeat for multiple reasons, for example max_tool_calls_reached=0."
+            )
+        ),
+    ] = None,
+    include_tool_loop_summary: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Read referenced normalized results and include observed tool-loop stop reason counts "
+                "without enforcing tool-loop thresholds."
+            )
+        ),
+    ] = False,
+    min_judge_verdict_valid_rate: Annotated[
+        float | None,
+        typer.Option(help="Minimum valid judge-rubric verdict rate percentage across referenced normalized results."),
+    ] = None,
+    include_judge_verdict_summary: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Read referenced normalized results and include observed judge-rubric verdict counts "
+                "without enforcing a judge-rubric threshold."
+            )
+        ),
+    ] = False,
+    max_invalid_tool_calls: Annotated[
+        int | None,
+        typer.Option(help="Maximum allowed invalid tool-call emissions across referenced normalized results."),
+    ] = None,
+    min_tool_parser_repair_valid_rate: Annotated[
+        float | None,
+        typer.Option(help="Minimum valid tool-parser repair rate percentage across referenced normalized results."),
+    ] = None,
+    include_tool_parser_repair_summary: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Read referenced normalized results and include observed invalid tool-call and tool-parser "
+                "repair counts without enforcing parser-repair thresholds."
+            )
+        ),
+    ] = False,
     output_json: Annotated[Path | None, typer.Option(help="Optional JSON gate report output path.")] = None,
 ) -> None:
     """Evaluate matrix-level CI/release thresholds from an execution summary."""
@@ -1172,6 +1726,20 @@ def matrix_gate(
         min_attempted_runs=min_attempted_runs,
         min_case_pass_rate=min_case_pass_rate,
         max_failed_cases=max_failed_cases,
+        max_failure_class_counts=_parse_failure_class_thresholds(max_failure_class),
+        include_failure_class_summary=include_failure_class_summary,
+        max_tool_loop_stop_reason_counts=_parse_count_thresholds(
+            max_tool_loop_stop_reason,
+            option_name="--max-tool-loop-stop-reason",
+            item_name="tool-loop stop reason",
+        ),
+        include_tool_loop_summary=include_tool_loop_summary,
+        min_judge_verdict_valid_rate=min_judge_verdict_valid_rate,
+        include_judge_verdict_summary=include_judge_verdict_summary,
+        max_invalid_tool_calls=max_invalid_tool_calls,
+        min_tool_parser_repair_valid_rate=min_tool_parser_repair_valid_rate,
+        include_tool_parser_repair_summary=include_tool_parser_repair_summary,
+        result_base_dir=summary_json.parent,
     )
     typer.echo(format_matrix_gate_report(report), nl=False)
     if output_json is not None:
@@ -1180,10 +1748,34 @@ def matrix_gate(
         raise typer.Exit(code=1)
 
 
+def _parse_failure_class_thresholds(items: list[str] | None) -> dict[str, int]:
+    return _parse_count_thresholds(items, option_name="--max-failure-class", item_name="failure class")
+
+
+def _parse_count_thresholds(items: list[str] | None, *, option_name: str, item_name: str) -> dict[str, int]:
+    thresholds: dict[str, int] = {}
+    for raw in items or []:
+        if "=" not in raw:
+            raise typer.BadParameter(f"{option_name} must use name=count")
+        name, value = raw.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name:
+            raise typer.BadParameter(f"{option_name} requires a non-empty {item_name}")
+        try:
+            max_count = int(value)
+        except ValueError as exc:
+            raise typer.BadParameter(f"{option_name} count must be an integer") from exc
+        if max_count < 0:
+            raise typer.BadParameter(f"{option_name} count must be non-negative")
+        thresholds[name] = max_count
+    return thresholds
+
+
 @app.command()
 def export(
     run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
-    format: Annotated[str, typer.Option(help="Comma-separated formats: jsonl,csv.")] = "jsonl,csv",
+    format: Annotated[str, typer.Option(help="Comma-separated formats: jsonl,csv,parquet.")] = "jsonl,csv",
     output_dir: Annotated[Path | None, typer.Option(help="Optional export output directory.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for result export events.")] = None,
 ) -> None:
@@ -1223,16 +1815,16 @@ def dashboard(
     """Serve the local dashboard for completed benchmark runs."""
     auth_token = _dashboard_auth_token_from_env(auth_token_env)
     try:
+        assert_dashboard_bind_allowed(
+            host,
+            allow_non_loopback=allow_non_loopback,
+            auth_configured=auth_token is not None,
+        )
         security_policy = load_policy(policy)
         enforce_dashboard_policy(
             security_policy,
             host=host,
             port=port,
-            allow_non_loopback=allow_non_loopback,
-            auth_configured=auth_token is not None,
-        )
-        assert_dashboard_bind_allowed(
-            host,
             allow_non_loopback=allow_non_loopback,
             auth_configured=auth_token is not None,
         )
@@ -1256,6 +1848,7 @@ def dashboard(
         allow_non_loopback=allow_non_loopback,
         auth_token=auth_token,
         audit_log=audit_log,
+        policy=security_policy,
     )
 
 
@@ -1331,21 +1924,128 @@ def compare_gate(
         raise typer.Exit(code=1)
 
 
+@app.command("telemetry-audit")
+def telemetry_audit_command(
+    run_dir: Annotated[Path, typer.Argument(help="Completed run artifact directory.")],
+    required_field: Annotated[
+        list[str] | None,
+        typer.Option("--required-field", help="Normalized telemetry field required for comparability. Repeatable."),
+    ] = None,
+    min_required_completeness: Annotated[
+        float,
+        typer.Option(help="Minimum completeness ratio for required fields, between 0 and 1."),
+    ] = 1.0,
+    output_json: Annotated[Path | None, typer.Option(help="Optional telemetry audit JSON output path.")] = None,
+    fail_on_findings: Annotated[
+        bool,
+        typer.Option("--fail-on-findings/--no-fail-on-findings", help="Exit non-zero when blocker findings are present."),
+    ] = False,
+) -> None:
+    """Audit normalized result telemetry provenance for cross-engine comparability."""
+    try:
+        report = audit_run_telemetry(
+            run_dir,
+            required_fields=required_field,
+            min_required_completeness=min_required_completeness,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json is not None:
+        typer.echo(str(write_telemetry_audit_json(report, output_json)))
+    typer.echo(format_telemetry_audit(report), nl=False)
+    if fail_on_findings and not report["summary"]["comparable_core_ok"]:
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def cleanup(
     run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
     raw: Annotated[bool, typer.Option(help="Delete raw trace artifacts.")] = True,
     reports: Annotated[bool, typer.Option(help="Delete generated report artifacts.")] = False,
     exports: Annotated[bool, typer.Option(help="Delete exported result artifacts.")] = False,
+    caches: Annotated[bool, typer.Option(help="Delete generated cache artifacts within the run directory.")] = False,
+    temp: Annotated[bool, typer.Option(help="Delete generated temporary artifacts within the run directory.")] = False,
+    bundles: Annotated[bool, typer.Option(help="Delete generated publication/evidence bundle artifacts within the run directory.")] = False,
     all_artifacts: Annotated[bool, typer.Option(help="Delete the entire run directory.")] = False,
+    execute: Annotated[bool, typer.Option(help="Apply cleanup. Defaults to dry-run planning.")] = False,
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON path for cleanup plan or execution result.")] = None,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for manual cleanup events.")] = None,
+    require_audit_log: Annotated[bool, typer.Option(help="Fail unless --audit-log is supplied.")] = False,
+    policy: Annotated[Path | None, typer.Option(help="Optional security policy file for cleanup controls.")] = None,
 ) -> None:
-    """Clean up generated run artifacts according to retention needs."""
+    """Plan or apply cleanup of generated run artifacts."""
     try:
-        removed = cleanup_run(run_dir, raw=raw, reports=reports, exports=exports, all_artifacts=all_artifacts)
+        cleanup_audit_required = require_audit_log or load_policy(policy).require_cleanup_audit_log
+        if cleanup_audit_required and audit_log is None:
+            raise ConfigError("--require-audit-log requires --audit-log")
+        planned = plan_cleanup_run(
+            run_dir,
+            raw=raw,
+            reports=reports,
+            exports=exports,
+            caches=caches,
+            temp=temp,
+            bundles=bundles,
+            all_artifacts=all_artifacts,
+        )
+        removed = (
+            cleanup_run(
+                run_dir,
+                raw=raw,
+                reports=reports,
+                exports=exports,
+                caches=caches,
+                temp=temp,
+                bundles=bundles,
+                all_artifacts=all_artifacts,
+            )
+            if execute
+            else planned
+        )
     except AgentBlasterError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    payload = {
+        "schema_version": CLEANUP_PLAN_SCHEMA_VERSION,
+        "report_type": "manual_cleanup_execution" if execute else "manual_cleanup_plan",
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "run_dir": str(run_dir),
+        "execute": execute,
+        "selectors": {
+            "raw": raw,
+            "reports": reports,
+            "exports": exports,
+            "caches": caches,
+            "temp": temp,
+            "bundles": bundles,
+            "all_artifacts": all_artifacts,
+        },
+        "action_count": len(removed),
+        "paths": [str(path) for path in removed],
+        "security": {
+            "contains_raw_secrets": False,
+            "contains_raw_provider_payloads": False,
+            "reads_keyring_values": False,
+            "contacts_providers": False,
+            "dry_run_default": True,
+            "contains_local_paths": True,
+            "direct_publication_safe": False,
+            "audit_log_required": cleanup_audit_required,
+        },
+    }
+    if output_json is not None:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        typer.echo(str(output_json))
+    AuditLogger(audit_log).emit(
+        "manual_cleanup_executed" if execute else "manual_cleanup_planned",
+        **payload,
+    )
+    if not removed:
+        typer.echo("no matching cleanup artifacts")
+        return
+    prefix = "removed" if execute else "would-remove"
     for path in removed:
-        typer.echo(str(path))
+        typer.echo(f"{prefix}\t{path}")
 
 
 @app.command("cleanup-expired")
@@ -1354,11 +2054,38 @@ def cleanup_expired(
     execute: Annotated[bool, typer.Option(help="Apply planned retention cleanup actions. Defaults to dry-run.")] = False,
     output_json: Annotated[Path | None, typer.Option(help="Optional JSON path for cleanup plan or execution result.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for retention cleanup events.")] = None,
+    require_audit_log: Annotated[bool, typer.Option(help="Fail unless --audit-log is supplied.")] = False,
+    policy: Annotated[Path | None, typer.Option(help="Optional security policy file for cleanup controls.")] = None,
 ) -> None:
     """Plan or apply cleanup for artifacts whose retention metadata has expired."""
-    actions = plan_expired_cleanup(runs)
-    result_actions = apply_expired_cleanup(actions) if execute else actions
-    payload = [action.model_dump(mode="json") for action in result_actions]
+    try:
+        cleanup_audit_required = require_audit_log or load_policy(policy).require_cleanup_audit_log
+        if cleanup_audit_required and audit_log is None:
+            raise ConfigError("--require-audit-log requires --audit-log")
+        actions = plan_expired_cleanup(runs)
+        result_actions = apply_expired_cleanup(actions) if execute else actions
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    action_payloads = [action.model_dump(mode="json") for action in result_actions]
+    payload = {
+        "schema_version": RETENTION_CLEANUP_SCHEMA_VERSION,
+        "report_type": "retention_cleanup_execution" if execute else "retention_cleanup_plan",
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "runs_dir": str(runs),
+        "execute": execute,
+        "action_count": len(result_actions),
+        "actions": action_payloads,
+        "security": {
+            "contains_raw_secrets": False,
+            "contains_raw_provider_payloads": False,
+            "reads_keyring_values": False,
+            "contacts_providers": False,
+            "dry_run_default": True,
+            "contains_local_paths": True,
+            "direct_publication_safe": False,
+            "audit_log_required": cleanup_audit_required,
+        },
+    }
     if output_json is not None:
         output_json.parent.mkdir(parents=True, exist_ok=True)
         output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1366,8 +2093,11 @@ def cleanup_expired(
     AuditLogger(audit_log).emit(
         "retention_cleanup_executed" if execute else "retention_cleanup_planned",
         runs_dir=str(runs),
+        execute=execute,
         action_count=len(result_actions),
-        actions=payload,
+        actions=action_payloads,
+        report_schema=RETENTION_CLEANUP_SCHEMA_VERSION,
+        audit_log_required=cleanup_audit_required,
     )
     if not result_actions:
         typer.echo("no expired artifacts")
@@ -1524,6 +2254,36 @@ def providers_metric_coverage(
     typer.echo(format_metric_coverage_report(report), nl=False)
 
 
+@catalog_app.command("normalize-telemetry")
+def catalog_normalize_telemetry(
+    input_json: Annotated[Path, typer.Argument(help="Raw provider response JSON file to normalize.")],
+    contract: Annotated[ApiContract, typer.Option(help="Provider contract for the raw response.")],
+    native_adapter: Annotated[str | None, typer.Option(help="Optional native adapter hint, for example ollama or lm-studio.")] = None,
+    latency_ms: Annotated[float | None, typer.Option(help="Optional measured request latency in milliseconds.")] = None,
+    ttft_ms: Annotated[float | None, typer.Option(help="Optional measured time-to-first-token in milliseconds.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional normalized telemetry JSON output path.")] = None,
+) -> None:
+    """Normalize a raw provider response sample into AgentBlaster telemetry fields."""
+    try:
+        raw = json.loads(input_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise typer.BadParameter(f"invalid input JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter("input JSON must be an object")
+    report = normalize_response_telemetry(
+        contract,
+        raw,
+        native_adapter=native_adapter,
+        latency_ms=latency_ms,
+        ttft_ms=ttft_ms,
+    )
+    if output_json is not None:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(normalized_response_telemetry_json(report), encoding="utf-8")
+        typer.echo(str(output_json))
+    typer.echo(format_normalized_response_telemetry(report), nl=False)
+
+
 @providers_app.command("contract-check")
 def providers_contract_check(
     provider: Annotated[str, typer.Option(help="Configured provider profile to inspect or execute against.")],
@@ -1640,6 +2400,61 @@ def quality_dashboard_fixture(
         typer.echo(f"run: {run_id}")
 
 
+@evidence_app.command("index")
+def evidence_index(
+    name: Annotated[str, typer.Option(help="Evidence index name.")] = "evidence-index",
+    artifact: Annotated[list[Path] | None, typer.Option(help="Review artifact path. Can be repeated.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional evidence index JSON output path.")] = None,
+) -> None:
+    """Create a compact no-dispatch index over supplied review artifacts."""
+    try:
+        report = build_evidence_index(name=name, artifacts=artifact or [])
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json is not None:
+        typer.echo(str(write_evidence_index(report, output_json)))
+    typer.echo(format_evidence_index(report), nl=False)
+
+
+@security_app.command("posture")
+def security_posture(
+    name: Annotated[str, typer.Option(help="Security posture report name.")] = "security-posture",
+    policy: Annotated[Path | None, typer.Option(help="Optional enterprise security policy YAML to summarize.")] = None,
+    provider_audit: Annotated[list[Path] | None, typer.Option("--provider-audit", help="Provider audit JSON artifact. Can be repeated.")] = None,
+    redaction_scan: Annotated[list[Path] | None, typer.Option("--redaction-scan", help="Redaction scan JSON artifact. Can be repeated.")] = None,
+    review_artifact: Annotated[list[Path] | None, typer.Option("--review-artifact", help="Review artifact JSON to summarize by security flags. Can be repeated.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional security posture JSON output path.")] = None,
+    output_md: Annotated[Path | None, typer.Option(help="Optional security posture Markdown output path.")] = None,
+    fail_on_blockers: Annotated[
+        bool,
+        typer.Option("--fail-on-blockers/--no-fail-on-blockers", help="Exit non-zero when posture blockers are present."),
+    ] = False,
+) -> None:
+    """Create a static enterprise security posture report without resolving secrets or contacting providers."""
+    try:
+        report = build_security_posture_report(
+            name=name,
+            policy_path=policy,
+            provider_audits=provider_audit,
+            redaction_scans=redaction_scan,
+            review_artifacts=review_artifact,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    artifacts: list[str] = []
+    if output_json is not None:
+        artifacts.append(str(write_security_posture_json(report, output_json)))
+    if output_md is not None:
+        artifacts.append(str(write_security_posture_markdown(report, output_md)))
+    if artifacts:
+        for artifact in artifacts:
+            typer.echo(artifact)
+    else:
+        typer.echo(format_security_posture_report(report), nl=False)
+    if fail_on_blockers and not report["ready"]:
+        raise typer.Exit(code=1)
+
+
 @release_app.command("provenance")
 def release_provenance(
     output: Annotated[Path, typer.Option(help="Output JSON path for the release provenance artifact.")],
@@ -1674,29 +2489,112 @@ def release_provenance(
     typer.echo(str(path))
 
 
+@release_app.command("packaging-readiness")
+def release_packaging_readiness(
+    project_root: Annotated[Path, typer.Option(help="Project root containing pyproject.toml.")] = Path("."),
+    output_json: Annotated[Path | None, typer.Option(help="Optional output JSON path for the packaging readiness artifact.")] = None,
+    fail_on_gaps: Annotated[
+        bool,
+        typer.Option("--fail-on-gaps/--no-fail-on-gaps", help="Exit non-zero when static packaging readiness gaps are found."),
+    ] = False,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for release readiness events.")] = None,
+) -> None:
+    """Generate a static package metadata, entrypoint, docs, and test-marker readiness report."""
+    output = output_json or Path("reports/packaging-readiness.json")
+    try:
+        path = write_packaging_readiness(output, project_root=project_root)
+        report_payload = json.loads(path.read_text(encoding="utf-8"))
+    except (AgentBlasterError, OSError, json.JSONDecodeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    AuditLogger(audit_log).emit(
+        "packaging_readiness_created",
+        artifact=str(path),
+        project_root=str(project_root),
+        ok=report_payload["ok"],
+        failed=report_payload["failed"],
+    )
+    typer.echo(format_packaging_readiness(report_payload), nl=False)
+    typer.echo(str(path))
+    if fail_on_gaps and not report_payload["ok"]:
+        raise typer.Exit(code=1)
+
+
 @release_app.command("qualification-bundle")
 def release_qualification_bundle(
     output_dir: Annotated[Path, typer.Option(help="Directory for the release qualification bundle.")],
     name: Annotated[str, typer.Option(help="Release qualification bundle name.")] = "release-qualification",
     evidence_bundle: Annotated[list[Path] | None, typer.Option(help="Evidence bundle artifact. Can be repeated.")] = None,
+    provider_audit: Annotated[list[Path] | None, typer.Option(help="Provider audit JSON artifact. Can be repeated.")] = None,
+    provider_contract_check: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check JSON artifact. Can be repeated.")] = None,
+    provider_contract_matrix: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check matrix JSON artifact. Can be repeated.")] = None,
     comparison_gate: Annotated[list[Path] | None, typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
     matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    telemetry_audit: Annotated[list[Path] | None, typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
+    matrix_pressure_audit: Annotated[list[Path] | None, typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    matrix_saturation_report: Annotated[list[Path] | None, typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
+    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    implementation_status: Annotated[list[Path] | None, typer.Option(help="Implementation status JSON artifact. Can be repeated.")] = None,
+    campaign_preflight_manifest: Annotated[list[Path] | None, typer.Option(help="Campaign preflight manifest JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness: Annotated[list[Path] | None, typer.Option(help="Benchmark readiness dossier JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness_list: Annotated[
+        list[Path] | None,
+        typer.Option(help="Text file with one benchmark readiness dossier JSON path per line. Can be repeated."),
+    ] = None,
+    claim_readiness: Annotated[list[Path] | None, typer.Option(help="Claim readiness JSON artifact. Can be repeated.")] = None,
+    engine_advisory: Annotated[list[Path] | None, typer.Option(help="Engine improvement advisory JSON artifact. Can be repeated.")] = None,
+    evidence_index: Annotated[list[Path] | None, typer.Option(help="Evidence index JSON artifact. Can be repeated.")] = None,
+    suite_audit: Annotated[list[Path] | None, typer.Option(help="Suite audit JSON artifact. Can be repeated.")] = None,
+    metric_coverage: Annotated[list[Path] | None, typer.Option(help="Metric coverage JSON artifact. Can be repeated.")] = None,
+    normalized_telemetry: Annotated[list[Path] | None, typer.Option(help="Normalized telemetry sample JSON artifact. Can be repeated.")] = None,
     release_provenance: Annotated[Path | None, typer.Option(help="Release provenance JSON artifact.")] = None,
     publication_bundle: Annotated[list[Path] | None, typer.Option(help="Publication bundle artifact. Can be repeated.")] = None,
+    publication_brief: Annotated[list[Path] | None, typer.Option(help="Publication brief JSON artifact. Can be repeated.")] = None,
+    protocol_repair_posture: Annotated[list[Path] | None, typer.Option(help="Protocol repair posture JSON artifact. Can be repeated.")] = None,
+    matrix_publication_bundle: Annotated[list[Path] | None, typer.Option(help="Matrix publication bundle artifact. Can be repeated.")] = None,
+    workflow_readiness: Annotated[list[Path] | None, typer.Option(help="Workflow readiness JSON artifact. Can be repeated.")] = None,
+    security_posture: Annotated[list[Path] | None, typer.Option(help="Security posture JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[list[Path] | None, typer.Option(help="Harness review JSON artifact. Can be repeated.")] = None,
+    suite_calibration_report: Annotated[list[Path] | None, typer.Option(help="Suite calibration report JSON artifact. Can be repeated.")] = None,
     selftest_report: Annotated[list[Path] | None, typer.Option(help="Selftest report artifact. Can be repeated.")] = None,
+    sdlc_validation_manifest: Annotated[list[Path] | None, typer.Option(help="SDLC validation manifest JSON artifact. Can be repeated.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for release qualification events.")] = None,
 ) -> None:
     """Create a redaction-safe release qualification package from gate and evidence artifacts."""
+    resolved_benchmark_readiness = _benchmark_readiness_paths(benchmark_readiness, benchmark_readiness_list)
     try:
         path = create_release_qualification_bundle(
             name=name,
             output_dir=output_dir,
             evidence_bundles=evidence_bundle,
+            provider_audits=provider_audit,
+            provider_contract_checks=provider_contract_check,
+            provider_contract_matrices=provider_contract_matrix,
             comparison_gates=comparison_gate,
             matrix_gates=matrix_gate,
+            telemetry_audits=telemetry_audit,
+            matrix_pressure_audits=matrix_pressure_audit,
+            matrix_saturation_reports=matrix_saturation_report,
+            matrix_scorecards=matrix_scorecard,
+            implementation_status_reports=implementation_status,
+            campaign_preflight_manifests=campaign_preflight_manifest,
+            benchmark_readiness_reports=resolved_benchmark_readiness,
+            claim_readiness_reports=claim_readiness,
+            engine_advisories=engine_advisory,
+            evidence_indexes=evidence_index,
+            suite_audits=suite_audit,
+            metric_coverage_reports=metric_coverage,
+            normalized_telemetry_reports=normalized_telemetry,
             release_provenance=release_provenance,
             publication_bundles=publication_bundle,
+            publication_briefs=publication_brief,
+            protocol_repair_postures=protocol_repair_posture,
+            matrix_publication_bundles=matrix_publication_bundle,
+            workflow_readiness_reports=workflow_readiness,
+            security_postures=security_posture,
+            harness_reviews=harness_review,
+            suite_calibration_reports=suite_calibration_report,
             selftest_reports=selftest_report,
+            sdlc_validation_manifests=sdlc_validation_manifest,
         )
     except AgentBlasterError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -1705,13 +2603,278 @@ def release_qualification_bundle(
         artifact=str(path),
         name=name,
         evidence_bundles=[str(item) for item in evidence_bundle or []],
+        provider_audits=[str(item) for item in provider_audit or []],
+        provider_contract_checks=[str(item) for item in provider_contract_check or []],
+        provider_contract_matrices=[str(item) for item in provider_contract_matrix or []],
         comparison_gates=[str(item) for item in comparison_gate or []],
         matrix_gates=[str(item) for item in matrix_gate or []],
+        telemetry_audits=[str(item) for item in telemetry_audit or []],
+        matrix_pressure_audits=[str(item) for item in matrix_pressure_audit or []],
+        matrix_saturation_reports=[str(item) for item in matrix_saturation_report or []],
+        matrix_scorecards=[str(item) for item in matrix_scorecard or []],
+        implementation_status_reports=[str(item) for item in implementation_status or []],
+        campaign_preflight_manifests=[str(item) for item in campaign_preflight_manifest or []],
+        benchmark_readiness_reports=[str(item) for item in resolved_benchmark_readiness or []],
+        benchmark_readiness_lists=[str(item) for item in benchmark_readiness_list or []],
+        claim_readiness_reports=[str(item) for item in claim_readiness or []],
+        engine_advisories=[str(item) for item in engine_advisory or []],
+        evidence_indexes=[str(item) for item in evidence_index or []],
+        suite_audits=[str(item) for item in suite_audit or []],
+        metric_coverage_reports=[str(item) for item in metric_coverage or []],
+        normalized_telemetry_reports=[str(item) for item in normalized_telemetry or []],
         release_provenance=str(release_provenance) if release_provenance else None,
         publication_bundles=[str(item) for item in publication_bundle or []],
+        publication_briefs=[str(item) for item in publication_brief or []],
+        protocol_repair_postures=[str(item) for item in protocol_repair_posture or []],
+        matrix_publication_bundles=[str(item) for item in matrix_publication_bundle or []],
+        workflow_readiness_reports=[str(item) for item in workflow_readiness or []],
+        security_postures=[str(item) for item in security_posture or []],
+        harness_reviews=[str(item) for item in harness_review or []],
+        suite_calibration_reports=[str(item) for item in suite_calibration_report or []],
         selftest_reports=[str(item) for item in selftest_report or []],
+        sdlc_validation_manifests=[str(item) for item in sdlc_validation_manifest or []],
     )
     typer.echo(str(path))
+
+
+@release_app.command("claim-readiness")
+def release_claim_readiness(
+    name: Annotated[str, typer.Option(help="Benchmark claim or campaign name.")] = "benchmark-claim",
+    experiment_manifest: Annotated[Path | None, typer.Option(help="Experiment manifest JSON artifact.")] = None,
+    experiment_gate: Annotated[Path | None, typer.Option(help="Experiment gate JSON artifact.")] = None,
+    provider_contract_check: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check JSON artifact. Can be repeated.")] = None,
+    provider_contract_matrix: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check matrix JSON artifact. Can be repeated.")] = None,
+    provider_audit: Annotated[list[Path] | None, typer.Option(help="Optional provider audit JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    comparison_gate: Annotated[list[Path] | None, typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
+    telemetry_audit: Annotated[list[Path] | None, typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
+    normalized_telemetry: Annotated[list[Path] | None, typer.Option(help="Optional normalized telemetry JSON artifact. Can be repeated.")] = None,
+    matrix_pressure_audit: Annotated[list[Path] | None, typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    matrix_saturation_report: Annotated[list[Path] | None, typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
+    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    implementation_status: Annotated[list[Path] | None, typer.Option(help="Optional implementation status JSON artifact. Can be repeated.")] = None,
+    release_provenance: Annotated[Path | None, typer.Option(help="Release provenance JSON artifact.")] = None,
+    release_qualification_bundle: Annotated[Path | None, typer.Option(help="Release qualification bundle artifact.")] = None,
+    redaction_scan: Annotated[Path | None, typer.Option(help="Redaction scan JSON artifact.")] = None,
+    publication_bundle: Annotated[list[Path] | None, typer.Option(help="Publication bundle artifact. Can be repeated.")] = None,
+    matrix_publication_bundle: Annotated[list[Path] | None, typer.Option(help="Matrix publication bundle artifact. Can be repeated.")] = None,
+    protocol_repair_posture: Annotated[list[Path] | None, typer.Option(help="Optional protocol repair posture JSON artifact. Can be repeated.")] = None,
+    workflow_readiness: Annotated[list[Path] | None, typer.Option(help="Optional workflow readiness JSON artifact. Can be repeated.")] = None,
+    security_posture: Annotated[list[Path] | None, typer.Option(help="Optional security posture JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[list[Path] | None, typer.Option(help="Optional harness review JSON artifact for generated suites. Can be repeated.")] = None,
+    suite_calibration_report: Annotated[list[Path] | None, typer.Option(help="Optional suite calibration report JSON artifact. Can be repeated.")] = None,
+    engine_advisory: Annotated[list[Path] | None, typer.Option(help="Optional engine improvement advisory JSON artifact. Can be repeated.")] = None,
+    evidence_index: Annotated[list[Path] | None, typer.Option(help="Optional evidence index JSON artifact. Can be repeated.")] = None,
+    suite_audit: Annotated[list[Path] | None, typer.Option(help="Optional suite audit JSON artifact. Can be repeated.")] = None,
+    metric_coverage: Annotated[list[Path] | None, typer.Option(help="Optional metric coverage JSON artifact. Can be repeated.")] = None,
+    campaign_preflight_manifest: Annotated[Path | None, typer.Option(help="Optional campaign preflight manifest JSON artifact.")] = None,
+    selftest_report: Annotated[list[Path] | None, typer.Option(help="Optional AgentBlaster selftest report JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness: Annotated[list[Path] | None, typer.Option(help="Optional benchmark readiness dossier JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness_list: Annotated[
+        list[Path] | None,
+        typer.Option(help="Text file with one benchmark readiness dossier JSON path per line. Can be repeated."),
+    ] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional claim readiness JSON output path.")] = None,
+    fail_on_blockers: Annotated[
+        bool,
+        typer.Option("--fail-on-blockers/--no-fail-on-blockers", help="Exit non-zero when required claim evidence is missing or failed."),
+    ] = False,
+) -> None:
+    """Gate whether a benchmark claim has the expected publication evidence."""
+    resolved_benchmark_readiness = _benchmark_readiness_paths(benchmark_readiness, benchmark_readiness_list)
+    try:
+        report = build_claim_readiness(
+            name=name,
+            experiment_manifest=experiment_manifest,
+            experiment_gate=experiment_gate,
+            provider_contract_checks=provider_contract_check,
+            provider_contract_matrices=provider_contract_matrix,
+            provider_audits=provider_audit,
+            matrix_gates=matrix_gate,
+            comparison_gates=comparison_gate,
+            telemetry_audits=telemetry_audit,
+            normalized_telemetry_reports=normalized_telemetry,
+            matrix_pressure_audits=matrix_pressure_audit,
+            matrix_saturation_reports=matrix_saturation_report,
+            matrix_scorecards=matrix_scorecard,
+            implementation_status_reports=implementation_status,
+            release_provenance=release_provenance,
+            release_qualification_bundle=release_qualification_bundle,
+            redaction_scan=redaction_scan,
+            publication_bundles=publication_bundle,
+            matrix_publication_bundles=matrix_publication_bundle,
+            protocol_repair_postures=protocol_repair_posture,
+            workflow_readiness_reports=workflow_readiness,
+            security_postures=security_posture,
+            harness_reviews=harness_review,
+            suite_calibration_reports=suite_calibration_report,
+            engine_advisories=engine_advisory,
+            evidence_indexes=evidence_index,
+            suite_audits=suite_audit,
+            metric_coverage_reports=metric_coverage,
+            campaign_preflight_manifest=campaign_preflight_manifest,
+            selftest_reports=selftest_report,
+            benchmark_readiness_reports=resolved_benchmark_readiness,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output_json is not None:
+        typer.echo(str(write_claim_readiness_json(report, output_json)))
+    typer.echo(format_claim_readiness(report), nl=False)
+    if fail_on_blockers and not report["ready"]:
+        raise typer.Exit(code=1)
+
+
+@release_app.command("publication-brief")
+def release_publication_brief(
+    claim_readiness: Annotated[Path, typer.Option(help="Claim readiness JSON artifact to summarize.")],
+    name: Annotated[str, typer.Option(help="Benchmark claim or campaign name.")] = "benchmark-claim",
+    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    release_provenance: Annotated[Path | None, typer.Option(help="Optional release provenance JSON artifact.")] = None,
+    evidence_index: Annotated[Path | None, typer.Option(help="Optional evidence index JSON artifact.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional publication brief JSON output path.")] = None,
+    output_md: Annotated[Path | None, typer.Option(help="Optional publication brief Markdown output path.")] = None,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for publication-brief events.")] = None,
+) -> None:
+    """Create a redaction-safe executive/media/corporate publication brief from review evidence."""
+    try:
+        report = build_publication_brief(
+            name=name,
+            claim_readiness=claim_readiness,
+            matrix_scorecards=matrix_scorecard,
+            release_provenance=release_provenance,
+            evidence_index=evidence_index,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    artifacts: list[str] = []
+    if output_json is not None:
+        artifacts.append(str(write_publication_brief_json(report, output_json)))
+    if output_md is not None:
+        artifacts.append(str(write_publication_brief_markdown(report, output_md)))
+    AuditLogger(audit_log).emit(
+        "publication_brief_created",
+        name=report["name"],
+        ready=report["ready"],
+        claim_readiness=str(claim_readiness),
+        matrix_scorecards=[str(item) for item in matrix_scorecard or []],
+        release_provenance=str(release_provenance) if release_provenance else None,
+        evidence_index=str(evidence_index) if evidence_index else None,
+        artifacts=artifacts,
+    )
+    if artifacts:
+        for artifact in artifacts:
+            typer.echo(artifact)
+    else:
+        typer.echo(format_publication_brief(report), nl=False)
+
+
+@release_app.command("protocol-repair")
+def release_protocol_repair(
+    name: Annotated[str, typer.Option(help="Benchmark claim or campaign name.")] = "benchmark-claim",
+    claim_readiness: Annotated[Path | None, typer.Option(help="Optional claim readiness JSON artifact to mine for compact protocol-repair evidence.")] = None,
+    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional protocol-repair posture JSON output path.")] = None,
+    output_md: Annotated[Path | None, typer.Option(help="Optional protocol-repair posture Markdown output path.")] = None,
+    fail_on_review: Annotated[
+        bool,
+        typer.Option("--fail-on-review/--no-fail-on-review", help="Exit non-zero when protocol-repair posture is not ready."),
+    ] = False,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for protocol-repair posture events.")] = None,
+) -> None:
+    """Create a redaction-safe protocol-repair posture artifact from compact review evidence."""
+    try:
+        report = build_protocol_repair_posture(
+            name=name,
+            claim_readiness=claim_readiness,
+            matrix_scorecards=matrix_scorecard,
+            matrix_gates=matrix_gate,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    artifacts: list[str] = []
+    if output_json is not None:
+        artifacts.append(str(write_protocol_repair_posture_json(report, output_json)))
+    if output_md is not None:
+        artifacts.append(str(write_protocol_repair_posture_markdown(report, output_md)))
+    AuditLogger(audit_log).emit(
+        "protocol_repair_posture_created",
+        name=report["name"],
+        status=report["status"],
+        ready=report["ready"],
+        claim_readiness=str(claim_readiness) if claim_readiness else None,
+        matrix_scorecards=[str(item) for item in matrix_scorecard or []],
+        matrix_gates=[str(item) for item in matrix_gate or []],
+        artifacts=artifacts,
+    )
+    if artifacts:
+        for artifact in artifacts:
+            typer.echo(artifact)
+    else:
+        typer.echo(format_protocol_repair_posture(report), nl=False)
+    if fail_on_review and not report["ready"]:
+        raise typer.Exit(code=1)
+
+
+@release_app.command("workflow-readiness")
+def release_workflow_readiness(
+    name: Annotated[str, typer.Option(help="Benchmark campaign or claim name.")] = "workflow-readiness",
+    suite: Annotated[list[str] | None, typer.Option("--suite", help="Built-in suite to include. Can be repeated.")] = None,
+    suite_file: Annotated[list[Path] | None, typer.Option("--suite-file", help="Suite YAML file to include. Can be repeated.")] = None,
+    matrix: Annotated[list[Path] | None, typer.Option("--matrix", help="Matrix YAML file to inspect. Can be repeated.")] = None,
+    matrix_pressure_audit: Annotated[list[Path] | None, typer.Option("--matrix-pressure-audit", help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[list[Path] | None, typer.Option("--harness-review", help="Harness review JSON artifact. Can be repeated.")] = None,
+    required_surface: Annotated[
+        list[str] | None,
+        typer.Option("--required-surface", help="Required workflow surface. Defaults to the full agentic readiness set. Can be repeated."),
+    ] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional workflow readiness JSON output path.")] = None,
+    output_md: Annotated[Path | None, typer.Option(help="Optional workflow readiness Markdown output path.")] = None,
+    fail_on_gaps: Annotated[
+        bool,
+        typer.Option("--fail-on-gaps/--no-fail-on-gaps", help="Exit non-zero when required workflow surfaces are missing."),
+    ] = False,
+    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for workflow-readiness events.")] = None,
+) -> None:
+    """Create a no-dispatch readiness artifact for intended agentic workflow-surface coverage."""
+    try:
+        report = build_workflow_readiness_report(
+            name=name,
+            suite_names=suite,
+            suite_files=suite_file,
+            matrices=matrix,
+            matrix_pressure_audits=matrix_pressure_audit,
+            harness_reviews=harness_review,
+            required_surfaces=required_surface,
+        )
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    artifacts: list[str] = []
+    if output_json is not None:
+        artifacts.append(str(write_workflow_readiness_json(report, output_json)))
+    if output_md is not None:
+        artifacts.append(str(write_workflow_readiness_markdown(report, output_md)))
+    AuditLogger(audit_log).emit(
+        "workflow_readiness_created",
+        name=report["name"],
+        status=report["status"],
+        ready=report["ready"],
+        suites=suite or [],
+        suite_files=[str(item) for item in suite_file or []],
+        matrices=[str(item) for item in matrix or []],
+        matrix_pressure_audits=[str(item) for item in matrix_pressure_audit or []],
+        harness_reviews=[str(item) for item in harness_review or []],
+        required_surfaces=report["required_surfaces"],
+        artifacts=artifacts,
+    )
+    if artifacts:
+        for artifact in artifacts:
+            typer.echo(artifact)
+    else:
+        typer.echo(format_workflow_readiness_report(report), nl=False)
+    if fail_on_gaps and not report["ready"]:
+        raise typer.Exit(code=1)
 
 
 @catalog_app.command("simulated-tools")
@@ -1735,6 +2898,27 @@ def catalog_simulated_tools(
     _emit_catalog("agentblaster.simulated-tools", items, output_json)
 
 
+@catalog_app.command("artifact-schemas")
+def catalog_artifact_schemas(
+    output: Annotated[Path | None, typer.Option(help="Optional output path.")] = None,
+    format: Annotated[str, typer.Option("--format", help="Output format: markdown or json.")] = "markdown",
+) -> None:
+    """Render the static artifact schema registry for reports, runs, matrices, and release evidence."""
+    normalized = format.strip().lower()
+    if normalized == "json":
+        content = artifact_schema_registry_json()
+    elif normalized in {"md", "markdown"}:
+        content = format_artifact_schema_registry_markdown()
+    else:
+        raise typer.BadParameter("format must be markdown or json")
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        typer.echo(str(output))
+        return
+    typer.echo(content, nl=False)
+
+
 @catalog_app.command("mcp-profiles")
 def catalog_mcp_profiles(
     output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
@@ -1749,6 +2933,7 @@ def catalog_mcp_profiles(
                 "tool_count": len(schemas),
                 "tool_names": [_tool_schema_display_name(schema) for schema in schemas],
                 "host_execution": False,
+                "deterministic_result_support": True,
             }
         )
     _emit_catalog("agentblaster.mcp-profiles", items, output_json)
@@ -1908,7 +3093,15 @@ def harness_profiles() -> None:
 @harness_app.command("generate")
 def harness_generate(
     output: Annotated[Path, typer.Option(help="Output YAML suite path.")],
-    profile: Annotated[str, typer.Option(help="Harness profile: prefill, concurrency, or contract-fuzz.")] = "contract-fuzz",
+    profile: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "Harness profile: prefill, concurrency, cancellation, contract-fuzz, "
+                "metamorphic, cache-replay, orchestration, skills, emerging-workflows, or judge-rubric."
+            )
+        ),
+    ] = "contract-fuzz",
     suite: Annotated[str, typer.Option(help="Built-in suite to use as the source.")] = "smoke",
     suite_file: Annotated[Path | None, typer.Option(help="YAML suite file to use instead of a built-in suite.")] = None,
     repeats: Annotated[int, typer.Option(help="Number of deterministic repetitions per source case.")] = 4,
@@ -1925,13 +3118,32 @@ def harness_generate(
     typer.echo(f"wrote {output} with {len(generated.cases)} case(s)")
 
 
+@harness_app.command("review")
+def harness_review(
+    suite: Annotated[str, typer.Option(help="Built-in suite to review when --suite-file is not set.")] = "smoke",
+    suite_file: Annotated[Path | None, typer.Option(help="YAML suite file to review.")] = None,
+    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the review artifact.")] = None,
+) -> None:
+    """Write a static, redaction-safe review artifact for a harness suite."""
+    try:
+        suite_definition = load_suite_file(suite_file) if suite_file else get_builtin_suite(suite)
+    except AgentBlasterError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    report = build_harness_review_report(suite_definition)
+    if output_json is not None:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    typer.echo(format_harness_review_report(report), nl=False)
+
+
 @models_app.command("targets")
 def model_targets() -> None:
     """List canonical model targets for standardized comparisons."""
     for target in list_model_targets():
         typer.echo(
             f"{target.id}\t{target.default_model}\t{target.metadata.architecture or 'unknown'}\t"
-            f"{target.parameter_count}\t{target.density}\t{target.display_name}"
+            f"{target.parameter_count}\t{target.density}\t{target.display_name}\t"
+            f"{target.comparison_group}\t{','.join(target.required_release_metadata) or 'none'}"
         )
 
 
@@ -1953,6 +3165,17 @@ def model_target_show(target: Annotated[str, typer.Argument(help="Canonical mode
     typer.echo(f"tokenizer: {model_target.metadata.tokenizer or 'none'}")
     typer.echo(f"chat_template: {model_target.metadata.chat_template or 'none'}")
     typer.echo(f"context_length: {model_target.metadata.context_length or 'none'}")
+    typer.echo(f"comparison_group: {model_target.comparison_group}")
+    typer.echo(
+        "required_release_metadata: "
+        f"{', '.join(model_target.required_release_metadata) if model_target.required_release_metadata else 'none'}"
+    )
+    typer.echo("publication_guidance:")
+    if model_target.publication_guidance:
+        for item in model_target.publication_guidance:
+            typer.echo(f"- {item}")
+    else:
+        typer.echo("- none")
     typer.echo(f"notes: {model_target.notes or 'none'}")
 
 
@@ -2129,6 +3352,39 @@ def launch_recipes_command(
     typer.echo(f"provider_add: {' '.join(payload['provider_add_command'])}")
 
 
+@engines_app.command("onboarding")
+def engines_onboarding_command(
+    engines: Annotated[str | None, typer.Option(help="Comma-separated local engines. Defaults to all local presets.")] = None,
+    model: Annotated[str, typer.Option(help="Model id to insert into launch recipes.")] = "mlx-community/Qwen3.6-27B",
+    output: Annotated[Path | None, typer.Option(help="Optional output path for the onboarding artifact.")] = None,
+    format: Annotated[str, typer.Option("--format", help="Output format: markdown or json.")] = "markdown",
+) -> None:
+    """Render a static local-engine onboarding checklist for comparable benchmark setup."""
+    try:
+        payload = build_local_engine_onboarding(
+            engines=_split_csv(engines) if engines else None,
+            model=model,
+        )
+    except ConfigError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    normalized = format.strip().lower()
+    if normalized == "json":
+        content = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    elif normalized in {"md", "markdown"}:
+        content = format_local_engine_onboarding_markdown(payload)
+    else:
+        raise typer.BadParameter("format must be markdown or json")
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if normalized == "json":
+            write_local_engine_onboarding(payload, output)
+        else:
+            output.write_text(content, encoding="utf-8")
+        typer.echo(str(output))
+        return
+    typer.echo(content, nl=False)
+
+
 @engines_app.command()
 def probe(
     engine: Annotated[str, typer.Option(help="Engine profile name.")],
@@ -2144,8 +3400,9 @@ def probe(
 def provider_onboarding(
     preset: Annotated[str, typer.Option(help="Remote provider preset: openai, openai-responses, or anthropic.")],
     name: Annotated[str | None, typer.Option(help="Provider profile name to create in the generated commands.")] = None,
-    secret_mode: Annotated[str, typer.Option(help="Secret backend mode for the plan: env or keyring.")] = "env",
+    secret_mode: Annotated[str, typer.Option(help="Secret backend mode for the plan: env, keyring, or dotenv.")] = "env",
     api_key_env: Annotated[str | None, typer.Option(help="Environment variable name for env mode or key staging.")] = None,
+    dotenv_file: Annotated[str | None, typer.Option(help="Plaintext dotenv file path for dotenv-mode onboarding plans.")] = None,
     base_url: Annotated[str | None, typer.Option(help="Optional remote base URL override.")] = None,
     model: Annotated[str | None, typer.Option(help="Model id to use in readiness, contract-check, and smoke commands.")] = None,
     policy: Annotated[Path | None, typer.Option(help="Policy file path referenced by audit/readiness commands.")] = None,
@@ -2159,6 +3416,7 @@ def provider_onboarding(
             provider_name=name,
             secret_mode=secret_mode,  # type: ignore[arg-type]
             api_key_env=api_key_env,
+            dotenv_file=dotenv_file,
             base_url=base_url,
             model=model,
             policy=policy,
@@ -2197,13 +3455,25 @@ def add_provider(
         str | None,
         typer.Option(help="Environment variable containing the API key."),
     ] = None,
+    header: Annotated[
+        list[str] | None,
+        typer.Option(help="Non-secret provider header formatted as name=value. Repeat for multiple headers."),
+    ] = None,
     metrics_url: Annotated[str | None, typer.Option(help="Optional Prometheus /metrics URL to snapshot before and after runs.")] = None,
+    native_adapter: Annotated[
+        str | None,
+        typer.Option(help="Optional native adapter hint, for example ollama or lm-studio."),
+    ] = None,
     tls_verify: Annotated[
         bool,
         typer.Option("--tls-verify/--no-tls-verify", help="Verify TLS certificates for HTTPS provider requests."),
     ] = True,
     ca_bundle: Annotated[Path | None, typer.Option(help="Optional custom CA bundle path for enterprise TLS gateways.")] = None,
     remote: Annotated[bool, typer.Option(help="Mark provider as internet-facing/remote.")] = False,
+    include_provider_audit: Annotated[
+        bool,
+        typer.Option(help="Accepted for compatibility; provider add always emits redacted audit metadata when --audit-log is set."),
+    ] = False,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for provider config events.")] = None,
 ) -> None:
     """Add or update a provider profile."""
@@ -2223,7 +3493,9 @@ def add_provider(
         )
         or ModelMetadata(),
         api_key_ref=api_key_ref,
+        headers=_parse_header_options(header),
         metrics_url=metrics_url,
+        native_adapter=native_adapter,
         tls_verify=tls_verify,
         ca_bundle=ca_bundle,
         remote=remote,
@@ -2237,12 +3509,30 @@ def add_provider(
         contract=provider.contract.value,
         base_url=str(provider.base_url).rstrip("/"),
         remote=provider.remote,
-        api_key_ref=provider.api_key_ref.display() if provider.api_key_ref else None,
+        api_key_ref=provider.api_key_ref.redacted_display() if provider.api_key_ref else None,
+        api_key_ref_path_redacted=provider.api_key_ref.display_path_redacted() if provider.api_key_ref else False,
         metrics_url=str(provider.metrics_url).rstrip("/") if provider.metrics_url else None,
+        native_adapter=provider.native_adapter,
         tls_verify=provider.tls_verify,
         ca_bundle=str(provider.ca_bundle) if provider.ca_bundle else None,
     )
     typer.echo(f"saved provider {provider.name}")
+
+
+def _parse_header_options(items: list[str] | None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for raw in items or []:
+        if "=" not in raw:
+            raise typer.BadParameter("--header must use name=value")
+        name, value = raw.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name:
+            raise typer.BadParameter("--header requires a non-empty header name")
+        if not value:
+            raise typer.BadParameter("--header requires a non-empty header value")
+        headers[name] = value
+    return headers
 
 
 @providers_app.command("presets")
@@ -2295,7 +3585,8 @@ def add_provider_preset(
         contract=provider.contract.value,
         base_url=str(provider.base_url).rstrip("/"),
         remote=provider.remote,
-        api_key_ref=provider.api_key_ref.display() if provider.api_key_ref else None,
+        api_key_ref=provider.api_key_ref.redacted_display() if provider.api_key_ref else None,
+        api_key_ref_path_redacted=provider.api_key_ref.display_path_redacted() if provider.api_key_ref else False,
         metrics_url=str(provider.metrics_url).rstrip("/") if provider.metrics_url else None,
         tls_verify=provider.tls_verify,
         ca_bundle=str(provider.ca_bundle) if provider.ca_bundle else None,
@@ -2311,7 +3602,7 @@ def list_providers() -> None:
         typer.echo("no providers configured")
         return
     for provider in providers:
-        secret = provider.api_key_ref.display() if provider.api_key_ref else "none"
+        secret = provider.api_key_ref.redacted_display() if provider.api_key_ref else "none"
         typer.echo(
             f"{provider.name}\t{provider.contract.value}\t{str(provider.base_url).rstrip('/')}\t"
             f"remote={str(provider.remote).lower()}\tsecret={secret}"
@@ -2322,7 +3613,7 @@ def list_providers() -> None:
 def show_provider(name: Annotated[str, typer.Argument(help="Provider profile name.")]) -> None:
     """Show a configured provider profile without secret values."""
     provider = ProviderStore().get(name)
-    secret = provider.api_key_ref.display() if provider.api_key_ref else "none"
+    secret = provider.api_key_ref.redacted_display() if provider.api_key_ref else "none"
     typer.echo(f"name: {provider.name}")
     typer.echo(f"contract: {provider.contract.value}")
     typer.echo(f"base_url: {str(provider.base_url).rstrip('/')}")
@@ -2336,6 +3627,11 @@ def show_provider(name: Annotated[str, typer.Argument(help="Provider profile nam
     typer.echo(f"metrics_url: {str(provider.metrics_url).rstrip('/') if provider.metrics_url else 'none'}")
     typer.echo(f"tls_verify: {str(provider.tls_verify).lower()}")
     typer.echo(f"ca_bundle: {str(provider.ca_bundle) if provider.ca_bundle else 'none'}")
+    typer.echo(f"native_adapter: {provider.native_adapter or 'none'}")
+    typer.echo(
+        "headers: "
+        + (", ".join(sorted(provider.headers)) if provider.headers else "none")
+    )
     typer.echo(f"remote: {str(provider.remote).lower()}")
     typer.echo(f"api_key_ref: {secret}")
     if provider.capabilities:
@@ -2500,6 +3796,7 @@ def audit_provider_profiles(
     if output_json is not None:
         output_json.parent.mkdir(parents=True, exist_ok=True)
         output_json.write_text(provider_audit_json(report), encoding="utf-8")
+        typer.echo(format_provider_audit(report), nl=False)
         typer.echo(str(output_json))
         return
     typer.echo(format_provider_audit(report), nl=False)
@@ -2589,6 +3886,11 @@ def clear_provider_capability(
     typer.echo(f"cleared capability {capability_key} for {provider}")
 
 
+def _default_dotenv_secret_variable(provider: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", provider).strip("_").upper()
+    return f"AGENTBLASTER_{normalized or 'PROVIDER'}_API_KEY"
+
+
 @providers_auth_app.command("set")
 def set_auth(
     provider: Annotated[str, typer.Option(help="Provider profile name.")],
@@ -2597,35 +3899,95 @@ def set_auth(
         str | None,
         typer.Option(help="Use an environment variable as the provider API key reference."),
     ] = None,
+    api_key_dotenv_file: Annotated[
+        Path | None,
+        typer.Option(help="Read API key from stdin and store it in an explicit plaintext .env fallback file."),
+    ] = None,
+    dotenv_var: Annotated[
+        str | None,
+        typer.Option(help="Variable name to use with --api-key-dotenv-file."),
+    ] = None,
+    allow_plaintext_secret_file: Annotated[
+        bool,
+        typer.Option(help="Required with --api-key-dotenv-file to acknowledge plaintext secret-file storage."),
+    ] = False,
+    policy: Annotated[Path | None, typer.Option(help="Optional policy file to enforce before storing writable secrets.")] = None,
     audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for secret reference changes.")] = None,
 ) -> None:
     """Configure a provider API-key reference without storing plaintext config secrets."""
-    if api_key_stdin and api_key_env:
-        raise typer.BadParameter("choose only one of --api-key-stdin or --api-key-env")
-    if not api_key_stdin and not api_key_env:
-        raise typer.BadParameter("use --api-key-stdin for keyring storage or --api-key-env for portable env refs")
+    secret_source_count = sum(source is not None and source is not False for source in (api_key_stdin, api_key_env, api_key_dotenv_file))
+    if secret_source_count > 1:
+        raise typer.BadParameter("choose only one of --api-key-stdin, --api-key-env, or --api-key-dotenv-file")
+    if secret_source_count == 0:
+        raise typer.BadParameter(
+            "use --api-key-stdin for keyring storage, --api-key-env for portable env refs, "
+            "or --api-key-dotenv-file with --allow-plaintext-secret-file for development fallback"
+        )
+    if api_key_dotenv_file and not allow_plaintext_secret_file:
+        raise typer.BadParameter("--api-key-dotenv-file requires --allow-plaintext-secret-file")
 
-    ref = (
-        SecretRef(kind="env", name=api_key_env)
-        if api_key_env
-        else SecretRef(kind="keyring", name=f"{provider}:api_key")
-    )
+    if api_key_env:
+        ref = SecretRef(kind="env", name=api_key_env)
+    elif api_key_dotenv_file:
+        variable = dotenv_var or _default_dotenv_secret_variable(provider)
+        ref = SecretRef(kind="dotenv", name=dotenv_ref_name(variable, api_key_dotenv_file))
+    else:
+        ref = SecretRef(kind="keyring", name=f"{provider}:api_key")
     store = ProviderStore()
     config = store.get(provider)
-    if api_key_stdin:
+    updated_config = config.model_copy(update={"api_key_ref": ref})
+    if policy is not None:
+        try:
+            enforce_provider_policy(
+                updated_config,
+                load_policy(policy),
+                raw_trace_mode=RawTraceMode.REDACTED,
+                concurrency=1,
+                suite=None,
+            )
+        except AgentBlasterError as exc:
+            AuditLogger(audit_log).emit(
+                "provider_auth_ref_rejected",
+                provider=provider,
+                ref_kind=ref.kind,
+                stored_keyring_secret=False,
+                stored_dotenv_secret=False,
+                plaintext_secret_file="<redacted-path>" if api_key_dotenv_file else None,
+                plaintext_secret_file_name=api_key_dotenv_file.name if api_key_dotenv_file else None,
+                api_key_ref=ref.redacted_display(),
+                api_key_ref_path_redacted=ref.display_path_redacted(),
+                plaintext_secret_warning=api_key_dotenv_file is not None,
+                policy_path=str(policy),
+                policy_ok=False,
+                policy_reason=str(exc),
+            )
+            raise typer.BadParameter("provider auth secret storage blocked by policy") from exc
+    if api_key_stdin or api_key_dotenv_file:
         api_key = sys.stdin.read().strip()
         try:
             SecretResolver().set(ref, api_key)
         except AgentBlasterError as exc:
             raise typer.BadParameter(str(exc)) from exc
-    store.upsert(config.model_copy(update={"api_key_ref": ref}))
+    store.upsert(updated_config)
     AuditLogger(audit_log).emit(
         "provider_auth_ref_changed",
         provider=provider,
-        api_key_ref=ref.display(),
+        api_key_ref=ref.redacted_display(),
+        api_key_ref_path_redacted=ref.display_path_redacted(),
         ref_kind=ref.kind,
         stored_keyring_secret=api_key_stdin,
+        stored_dotenv_secret=api_key_dotenv_file is not None,
+        plaintext_secret_file="<redacted-path>" if api_key_dotenv_file else None,
+        plaintext_secret_file_name=api_key_dotenv_file.name if api_key_dotenv_file else None,
+        plaintext_secret_warning=api_key_dotenv_file is not None,
+        policy_path=str(policy) if policy else None,
+        policy_ok=True if policy else None,
     )
+    if api_key_dotenv_file:
+        typer.echo(
+            f"WARNING: stored plaintext .env secret fallback for {provider}; "
+            "use env or keyring for CI/corporate runs"
+        )
     typer.echo(f"stored {ref.kind} secret reference for {provider}")
 
 
@@ -2636,7 +3998,7 @@ def test_auth(provider: Annotated[str, typer.Option(help="Provider profile name.
     if config.api_key_ref is None:
         raise typer.BadParameter(f"provider {provider} has no api_key_ref")
     if not SecretResolver().resolve(config.api_key_ref):
-        raise typer.BadParameter(f"secret reference does not resolve: {config.api_key_ref.display()}")
+        raise typer.BadParameter(f"secret reference does not resolve: {config.api_key_ref.redacted_display()}")
     typer.echo(f"secret reference resolves for {provider}")
 
 
@@ -2652,7 +4014,7 @@ def auth_status(provider: Annotated[str, typer.Option(help="Provider profile nam
         typer.echo("resolves: false")
         return
     resolves = SecretResolver().resolve(ref) is not None
-    typer.echo(f"api_key_ref: {ref.display()}")
+    typer.echo(f"api_key_ref: {ref.redacted_display()}")
     typer.echo(f"kind: {ref.kind}")
     typer.echo("configured: true")
     typer.echo(f"resolves: {str(resolves).lower()}")
@@ -2672,8 +4034,11 @@ def clear_auth(
     config = store.get(provider)
     ref = config.api_key_ref
     if ref is not None and delete_secret:
-        if ref.kind != "keyring":
-            raise typer.BadParameter("only keyring secrets can be deleted by AgentBlaster; unset env secrets in your shell or CI")
+        if ref.kind not in {"keyring", "dotenv"}:
+            raise typer.BadParameter(
+                "only keyring or dotenv secrets can be deleted by AgentBlaster; "
+                "unset env secrets in your shell or CI"
+            )
         try:
             SecretResolver().delete(ref)
         except AgentBlasterError as exc:
@@ -2682,13 +4047,15 @@ def clear_auth(
     AuditLogger(audit_log).emit(
         "provider_auth_ref_cleared",
         provider=provider,
-        previous_api_key_ref=ref.display() if ref else None,
+        previous_api_key_ref=ref.redacted_display() if ref else None,
+        previous_api_key_ref_path_redacted=ref.display_path_redacted() if ref else False,
         deleted_keyring_secret=delete_secret and ref is not None and ref.kind == "keyring",
+        deleted_dotenv_secret=delete_secret and ref is not None and ref.kind == "dotenv",
     )
     if ref is None:
         typer.echo(f"auth reference already empty for {provider}")
     elif delete_secret:
-        typer.echo(f"cleared auth reference and deleted keyring secret for {provider}")
+        typer.echo(f"cleared auth reference and deleted {ref.kind} secret for {provider}")
     else:
         typer.echo(f"cleared auth reference for {provider}")
 
@@ -2729,6 +4096,44 @@ def quality_gates(
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(content)
+        typer.echo(output)
+        return
+    typer.echo(content, nl=False)
+
+
+@quality_app.command("validation-manifest")
+def quality_validation_manifest(
+    format: Annotated[str, typer.Option("--format", help="Output format: json or markdown.")] = "json",
+    output: Annotated[Path | None, typer.Option(help="Optional path to write the SDLC validation manifest.")] = None,
+    name: Annotated[str, typer.Option(help="Manifest name for the SDLC validation plan.")] = "agentblaster-sdlc",
+    dashboard_url: Annotated[str, typer.Option(help="Dashboard URL used by Chrome/Codex and browser checks.")] = "http://127.0.0.1:8765",
+    fixture_dir: Annotated[str, typer.Option(help="Deterministic dashboard fixture directory.")] = "tests/fixtures/dashboard-runs",
+    evidence_dir: Annotated[str, typer.Option(help="Directory where Chrome/Codex GUI evidence should be collected.")] = "test-reports/gui",
+    browser: Annotated[str, typer.Option(help="Browser target for the CI GUI lane.")] = "chrome",
+) -> None:
+    """Render the full AgentBlaster SDLC validation manifest without running tests."""
+    normalized = format.strip().lower()
+    if normalized == "json":
+        content = render_sdlc_validation_manifest_json(
+            name=name,
+            dashboard_url=dashboard_url,
+            fixture_dir=fixture_dir,
+            evidence_dir=evidence_dir,
+            browser=browser,
+        )
+    elif normalized in {"md", "markdown"}:
+        content = render_sdlc_validation_manifest_markdown(
+            name=name,
+            dashboard_url=dashboard_url,
+            fixture_dir=fixture_dir,
+            evidence_dir=evidence_dir,
+            browser=browser,
+        )
+    else:
+        raise typer.BadParameter("format must be json or markdown")
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
         typer.echo(output)
         return
     typer.echo(content, nl=False)

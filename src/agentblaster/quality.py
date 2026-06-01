@@ -11,6 +11,10 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 
+SELFTEST_REPORT_SCHEMA_VERSION = "agentblaster.selftest-report.v1"
+SDLC_VALIDATION_MANIFEST_SCHEMA_VERSION = "agentblaster.sdlc-validation-manifest.v1"
+
+
 @dataclass(frozen=True)
 class TestTier:
     name: str
@@ -62,6 +66,7 @@ class SelftestCommand:
     headed: bool = False
     report_dir: Path | None = None
     junit_xml: Path | None = None
+    run_id: str | None = None
 
     def rendered(self) -> str:
         env_prefix = " ".join(f"{key}={shlex.quote(value)}" for key, value in sorted(self.env.items()))
@@ -117,8 +122,8 @@ SDLC_GATES: tuple[SdlcGate, ...] = (
         command="agentblaster quality gui-artifacts --output tests/gui --overwrite",
         required=False,
         blocking=False,
-        evidence="Chrome dashboard plan, checklist, screenshots, and redacted API snippets when performed.",
-        purpose="Capture browser-profile-dependent GUI evidence without exposing real API keys or raw traces.",
+        evidence="Chrome dashboard plan, checklist, screenshots, redacted API snippets, and provider-contract capability evidence when performed.",
+        purpose="Capture browser-profile-dependent GUI evidence, including provider-contract direct/proxy/not-covered capability coverage, without exposing real API keys or raw traces.",
     ),
     SdlcGate(
         id="packaging-release",
@@ -134,11 +139,11 @@ SDLC_GATES: tuple[SdlcGate, ...] = (
         id="release-qualification",
         title="Release qualification bundle gate",
         phase="release",
-        command="agentblaster release qualification-bundle --output-dir test-reports/release",
+        command="agentblaster release qualification-bundle --name release-qualification --matrix-gate reports/qwen-gemma-matrix-gate.json --claim-readiness reports/qwen-gemma-claim-readiness.json --output-dir test-reports/release",
         required=True,
         blocking=True,
-        evidence="Release qualification bundle with provenance, gate outputs, redaction scan, and skipped-check rationale.",
-        purpose="Assemble corporate-consumable evidence that AgentBlaster was qualified without leaking secrets.",
+        evidence="Release qualification bundle with provenance, class-specific matrix gates, bounded agentic-tool-loop stop-reason gates, claim readiness, redaction scan, and skipped-check rationale.",
+        purpose="Assemble corporate-consumable evidence, including failure-class gate summaries and tool-loop stop-reason gate summaries, without leaking secrets.",
     ),
     SdlcGate(
         id="redaction-scan",
@@ -263,6 +268,13 @@ CHROME_DASHBOARD_VALIDATION: tuple[ChromeValidationStep, ...] = (
         evidence="Saved redacted JSON snippets or screenshots from Chrome.",
     ),
     ChromeValidationStep(
+        id="chrome-provider-contract-capability-evidence",
+        title="Provider-contract capability evidence is reviewable",
+        action="Inspect the Review evidence panel and `/api/review-artifacts` for provider-contract check, matrix, and release-qualification bundle summaries.",
+        expected="Directly checked, proxy-checked, and not-covered capability evidence is visible for provider-contract artifacts, including structured-output-backed judge-rubric evidence, without exposing raw provider payloads, prompts, traces, or secrets.",
+        evidence="Screenshot of the provider-contract review row plus a redacted `/api/review-artifacts` snippet containing direct/proxy/not-covered capability evidence.",
+    ),
+    ChromeValidationStep(
         id="chrome-responsive-layout",
         title="Dashboard handles desktop and narrow widths",
         action="Use Chrome responsive mode to inspect a desktop width and a narrow mobile width.",
@@ -275,6 +287,13 @@ CHROME_DASHBOARD_VALIDATION: tuple[ChromeValidationStep, ...] = (
         action="Open generated HTML report artifacts in Chrome from the dashboard or filesystem.",
         expected="Reports render with redacted fixture data and publication-quality layout without browser warnings.",
         evidence="Screenshot of the report and note of the originating run id.",
+    ),
+    ChromeValidationStep(
+        id="chrome-review-evidence",
+        title="Review evidence panel exposes compact release evidence",
+        action="Inspect the Review evidence panel and `/api/review-artifacts` with release qualification fixture bundles.",
+        expected="Matrix-gate failure-class and tool-loop stop-reason summaries, provider-contract capability evidence, harness-review calibration summaries, engine-advisory priority summaries, evidence-index readiness summaries, suite-audit dataset-hygiene summaries, and metric-coverage comparability summaries are visible while raw results, prompts, provider payloads, and secrets remain hidden.",
+        evidence="Screenshot of the Review evidence panel plus redacted `/api/review-artifacts` snippet.",
     ),
 )
 
@@ -293,13 +312,15 @@ CHROME_GUI_TEST_FLOWS: tuple[ChromeGuiFlow, ...] = (
             "Dashboard loads without browser security warnings.",
             "No raw API keys, Authorization headers, raw traces, or secret canaries are visible.",
             "Stable selectors are present for deterministic browser automation.",
+            "Review evidence exposes compact release qualification status, including provider-contract direct/proxy/not-covered capability evidence, without opening raw result artifacts.",
         ),
         evidence=(
             "Screenshot of the dashboard hero and runs table.",
             "Notes or captured snippets showing redacted provider and run data.",
+            "Screenshot of the Review evidence panel when release fixtures are present, with provider-contract capability evidence visible if available.",
         ),
-        selectors=("launch-panel", "catalog-panel", "catalog-link", "runs-panel", "runs-table", "run-row"),
-        api_surfaces=("/api/providers", "/api/suites", "/api/models", "/api/engine-targets", "/api/workflow-surfaces", "/api/telemetry-mappings", "/api/runs"),
+        selectors=("launch-panel", "catalog-panel", "catalog-link", "review-artifacts-panel", "review-artifacts-table", "runs-panel", "runs-table", "run-row"),
+        api_surfaces=("/api/providers", "/api/suites", "/api/models", "/api/engine-targets", "/api/local-engine-onboarding", "/api/workflow-surfaces", "/api/telemetry-mappings", "/api/review-artifacts", "/api/runs"),
     ),
     ChromeGuiFlow(
         id="provider-and-launch-flow",
@@ -307,20 +328,23 @@ CHROME_GUI_TEST_FLOWS: tuple[ChromeGuiFlow, ...] = (
         precondition="A mock local provider profile and built-in smoke suite are available; remote providers remain disabled unless policy explicitly allows them.",
         steps=(
             "Open the launch panel and inspect provider, suite, and model fields.",
+            "Submit the same provider/suite/model inputs through the run-plan preview before any launch.",
             "Select the mock provider and smoke suite, enter a synthetic model id, and submit the form in a dry fixture environment.",
             "Confirm policy-denial messaging appears for disallowed remote providers or blocked capability surfaces.",
         ),
         expected=(
             "The form exposes deterministic selectors and never displays stored secrets.",
+            "The preview renders a no-dispatch plan with safety flags before any provider request is made.",
             "Successful local launches create or reference a run without contacting paid providers.",
             "Blocked launches produce clear policy or capability messages.",
         ),
         evidence=(
             "Screenshot of the launch form before submission.",
+            "Screenshot or JSON snippet from the run-plan preview safety contract.",
             "Screenshot or JSON snippet for the launch result or denial state.",
         ),
-        selectors=("launch-form", "provider-select", "suite-select", "model-input", "launch-submit"),
-        api_surfaces=("POST /api/runs", "POST /launch"),
+        selectors=("launch-form", "provider-select", "suite-select", "model-input", "run-plan-submit", "run-plan-panel", "run-plan-safety", "launch-submit"),
+        api_surfaces=("POST /api/run-plan", "POST /run-plan", "POST /api/runs", "POST /launch"),
     ),
     ChromeGuiFlow(
         id="report-artifact-review",
@@ -330,18 +354,21 @@ CHROME_GUI_TEST_FLOWS: tuple[ChromeGuiFlow, ...] = (
             "Open each report artifact link from the run table or run detail surface.",
             "Confirm the browser renders HTML/card artifacts and downloads or displays JSON/Markdown artifacts without warnings.",
             "Inspect report content for redaction and corporate/publication readiness.",
+            "Inspect the Review evidence panel for provider-contract direct/proxy/not-covered capability evidence tied to reportable release artifacts.",
         ),
         expected=(
             "Only allowlisted report artifacts are served.",
             "Reports render without mixed-content or unsafe-file warnings.",
             "Reports contain normalized metrics, provenance, and no raw secrets.",
+            "Provider-contract review rows summarize directly checked, proxy-checked, and not-covered capabilities without exposing raw provider payloads.",
         ),
         evidence=(
             "Screenshot of a rendered HTML or card report.",
             "List of artifact URLs opened and any blocked artifacts.",
+            "Screenshot or redacted API snippet showing provider-contract capability evidence.",
         ),
-        selectors=("report-artifact-link",),
-        api_surfaces=("GET /runs/<run-id>/artifacts/<artifact>",),
+        selectors=("review-artifacts-panel", "review-artifacts-table", "report-artifact-link"),
+        api_surfaces=("/api/review-artifacts", "GET /runs/<run-id>/artifacts/<artifact>"),
     ),
     ChromeGuiFlow(
         id="responsive-api-review",
@@ -350,19 +377,21 @@ CHROME_GUI_TEST_FLOWS: tuple[ChromeGuiFlow, ...] = (
         steps=(
             "Use Chrome responsive mode for desktop and narrow mobile widths.",
             "Open redacted JSON endpoints directly in Chrome.",
+            "Inspect `/api/review-artifacts` for release qualification bundle summaries, failure-class counts, bounded tool-loop stop-reason counts, and provider-contract capability evidence.",
             "Inspect empty, failed, and completed run states when fixtures are available.",
         ),
         expected=(
             "Tables remain readable or horizontally scrollable at narrow widths.",
             "Status, cost, latency, and pass-rate signals remain visible.",
             "JSON endpoints are redacted and stable enough for browser automation snapshots.",
+            "Review artifact metadata includes compact failure-class, tool-loop stop-reason, and provider-contract capability evidence summaries without raw result rows.",
         ),
         evidence=(
             "Desktop and narrow-width screenshots.",
-            "Redacted JSON snippets for providers, suites, runs, and run detail.",
+            "Redacted JSON snippets for providers, suites, runs, run detail, and review artifacts.",
         ),
-        selectors=("catalog-panel", "empty-state", "runs-table", "run-row"),
-        api_surfaces=("/api/catalogs", "/api/providers", "/api/suites", "/api/models", "/api/engine-targets", "/api/workflow-surfaces", "/api/telemetry-mappings", "/api/runs", "/api/runs/<run-id>"),
+        selectors=("catalog-panel", "review-artifacts-panel", "review-artifacts-table", "empty-state", "runs-table", "run-row"),
+        api_surfaces=("/api/catalogs", "/api/providers", "/api/suites", "/api/models", "/api/engine-targets", "/api/local-engine-onboarding", "/api/workflow-surfaces", "/api/telemetry-mappings", "/api/review-artifacts", "/api/runs", "/api/runs/<run-id>"),
     ),
 )
 
@@ -391,6 +420,195 @@ def build_sdlc_gate_catalog() -> dict[str, object]:
             for gate in SDLC_GATES
         ],
     }
+
+
+def build_sdlc_validation_manifest(
+    *,
+    name: str = "agentblaster-sdlc",
+    dashboard_url: str = "http://127.0.0.1:8765",
+    fixture_dir: str = "tests/fixtures/dashboard-runs",
+    evidence_dir: str = "test-reports/gui",
+    browser: str = "chrome",
+) -> dict[str, object]:
+    chrome_plan = build_chrome_gui_test_plan(dashboard_url=dashboard_url, fixture_profile=fixture_dir)
+    return {
+        "schema_version": SDLC_VALIDATION_MANIFEST_SCHEMA_VERSION,
+        "name": name,
+        "scope": "AgentBlaster application validation harness",
+        "boundary": "This manifest validates AgentBlaster itself, not benchmarked engines or model quality.",
+        "summary": {
+            "tier_count": len(TEST_TIERS),
+            "ci_default_tier_count": sum(1 for tier in TEST_TIERS if tier.ci_default),
+            "gate_count": len(SDLC_GATES),
+            "required_gate_count": sum(1 for gate in SDLC_GATES if gate.required),
+            "blocking_gate_count": sum(1 for gate in SDLC_GATES if gate.blocking),
+            "chrome_flow_count": len(CHROME_GUI_TEST_FLOWS),
+            "chrome_validation_step_count": len(CHROME_DASHBOARD_VALIDATION),
+        },
+        "tiers": [
+            {
+                "name": tier.name,
+                "marker_expression": tier.marker_expression,
+                "command": tier.command,
+                "ci_default": tier.ci_default,
+                "purpose": tier.purpose,
+            }
+            for tier in TEST_TIERS
+        ],
+        "gates": [
+            {
+                "id": gate.id,
+                "title": gate.title,
+                "phase": gate.phase,
+                "command": gate.command,
+                "required": gate.required,
+                "blocking": gate.blocking,
+                "evidence": gate.evidence,
+                "purpose": gate.purpose,
+            }
+            for gate in SDLC_GATES
+        ],
+        "gui": {
+            "schema_version": GUI_TEST_SPEC_SCHEMA,
+            "dashboard_url": dashboard_url,
+            "fixture_dir": fixture_dir,
+            "evidence_dir": evidence_dir,
+            "browser": browser,
+            "fixture_command": f"agentblaster quality dashboard-fixture --output {fixture_dir} --overwrite",
+            "gui_spec_command": (
+                "agentblaster quality gui-spec "
+                f"--dashboard-url {dashboard_url} --fixture-dir {fixture_dir} --evidence-dir {evidence_dir} --browser {browser}"
+            ),
+            "chrome_plan_schema": chrome_plan["schema_version"],
+            "chrome_tool": "Codex Chrome plugin",
+            "chrome_flow_ids": [flow.id for flow in CHROME_GUI_TEST_FLOWS],
+            "chrome_validation_step_ids": [step.id for step in CHROME_DASHBOARD_VALIDATION],
+            "stable_selectors": sorted(
+                {
+                    selector
+                    for flow in CHROME_GUI_TEST_FLOWS
+                    for selector in flow.selectors
+                }
+            ),
+            "api_surfaces": sorted(
+                {
+                    surface
+                    for flow in CHROME_GUI_TEST_FLOWS
+                    for surface in flow.api_surfaces
+                }
+            ),
+        },
+        "release_evidence": {
+            "selftest_schema": SELFTEST_REPORT_SCHEMA_VERSION,
+            "manifest_schema": SDLC_VALIDATION_MANIFEST_SCHEMA_VERSION,
+            "gui_spec_schema": GUI_TEST_SPEC_SCHEMA,
+            "chrome_plan_schema": chrome_plan["schema_version"],
+            "expected_artifacts": [
+                "selftest-report.json",
+                "selftest-report.junit.xml",
+                "sdlc-validation-manifest.json",
+                "gui-test-spec.json",
+                "chrome-dashboard-plan.json",
+                "chrome-dashboard-checklist.md",
+                "redaction-scan.json",
+                "release-qualification bundle",
+            ],
+            "consumers": ["release qualification", "claim readiness", "evidence index", "dashboard review", "corporate SDLC review"],
+        },
+        "security": {
+            "contains_secrets": False,
+            "contains_raw_provider_payloads": False,
+            "contacts_providers": False,
+            "runs_tests": False,
+            "resolves_secret_references": False,
+            "notes": [
+                "The manifest is static planning evidence; generating it does not execute tests.",
+                "Chrome/Codex evidence must use redacted fixtures and must not expose real API keys.",
+                "Raw test command output and environment maps are not required for release summaries.",
+            ],
+        },
+    }
+
+
+def render_sdlc_validation_manifest_json(
+    *,
+    name: str = "agentblaster-sdlc",
+    dashboard_url: str = "http://127.0.0.1:8765",
+    fixture_dir: str = "tests/fixtures/dashboard-runs",
+    evidence_dir: str = "test-reports/gui",
+    browser: str = "chrome",
+) -> str:
+    return json.dumps(
+        build_sdlc_validation_manifest(
+            name=name,
+            dashboard_url=dashboard_url,
+            fixture_dir=fixture_dir,
+            evidence_dir=evidence_dir,
+            browser=browser,
+        ),
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+
+
+def render_sdlc_validation_manifest_markdown(
+    *,
+    name: str = "agentblaster-sdlc",
+    dashboard_url: str = "http://127.0.0.1:8765",
+    fixture_dir: str = "tests/fixtures/dashboard-runs",
+    evidence_dir: str = "test-reports/gui",
+    browser: str = "chrome",
+) -> str:
+    manifest = build_sdlc_validation_manifest(
+        name=name,
+        dashboard_url=dashboard_url,
+        fixture_dir=fixture_dir,
+        evidence_dir=evidence_dir,
+        browser=browser,
+    )
+    summary = manifest["summary"]
+    assert isinstance(summary, dict)
+    lines = [
+        "# AgentBlaster SDLC Validation Manifest",
+        "",
+        "# AgentBlaster GUI Self-Test Specification",
+        "",
+        f"Schema: `{manifest['schema_version']}`",
+        f"Name: `{manifest['name']}`",
+        "",
+        str(manifest["boundary"]),
+        "",
+        "## Summary",
+        "",
+        f"- Tiers: {summary['tier_count']} ({summary['ci_default_tier_count']} CI-default)",
+        f"- Gates: {summary['gate_count']} ({summary['required_gate_count']} required, {summary['blocking_gate_count']} blocking)",
+        f"- Chrome flows: {summary['chrome_flow_count']}",
+        f"- Chrome validation steps: {summary['chrome_validation_step_count']}",
+        "",
+        "## Required Blocking Gates",
+        "",
+    ]
+    for gate in manifest["gates"]:
+        assert isinstance(gate, dict)
+        if gate["required"] and gate["blocking"]:
+            lines.append(f"- `{gate['id']}`: `{gate['command']}`")
+    lines.extend(["", "## Chrome/Codex Evidence Lane", "", "## GUI Evidence Hooks", ""])
+    gui = manifest["gui"]
+    assert isinstance(gui, dict)
+    lines.extend(
+        [
+            f"- Dashboard URL: `{gui['dashboard_url']}`",
+            f"- Fixture directory: `{gui['fixture_dir']}`",
+            f"- Evidence directory: `{gui['evidence_dir']}`",
+            f"- Browser: `{gui['browser']}`",
+            f"- Chrome tool: `{gui['chrome_tool']}`",
+        ]
+    )
+    lines.extend(["", "## Security Boundary", ""])
+    security = manifest["security"]
+    assert isinstance(security, dict)
+    lines.extend(f"- {item}" for item in security["notes"])
+    return "\n".join(lines) + "\n"
 
 
 def render_sdlc_gate_catalog_json() -> str:
@@ -569,9 +787,12 @@ def build_selftest_command(
     headed: bool = False,
     report_dir: Path | None = None,
     junit_xml: Path | None = None,
+    run_id: str | None = None,
     extra_args: tuple[str, ...] = (),
 ) -> SelftestCommand:
     tier = get_test_tier(tier_name)
+    if run_id is not None:
+        _validate_selftest_run_id(run_id)
     env = {"PYTHONPATH": "src"}
     argv = ["pytest", "-q", "-m", tier.marker_expression]
     if tier.name == "gui":
@@ -590,6 +811,7 @@ def build_selftest_command(
         headed=headed,
         report_dir=report_dir,
         junit_xml=junit_xml,
+        run_id=run_id,
     )
 
 
@@ -609,6 +831,8 @@ def render_selftest_plan(command: SelftestCommand) -> str:
         lines.append(f"junit_xml: {command.junit_xml}")
     if command.report_dir is not None:
         lines.append(f"report_dir: {command.report_dir}")
+    if command.run_id is not None:
+        lines.append(f"run_id: {command.run_id}")
     return "\n".join(lines) + "\n"
 
 
@@ -641,11 +865,12 @@ def write_selftest_execution_manifest(
 ) -> Path:
     if command.report_dir is None:
         raise ValueError("report_dir is required")
-    run_id = f"selftest_{started_at.strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = command.run_id or f"selftest_{started_at.strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = command.report_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     duration_ms = round(max((completed_at - started_at).total_seconds() * 1000, 0.0), 3)
     payload = {
+        "schema_version": SELFTEST_REPORT_SCHEMA_VERSION,
         "run_id": run_id,
         "tier": command.tier.name,
         "purpose": command.tier.purpose,
@@ -667,12 +892,21 @@ def write_selftest_execution_manifest(
     return path
 
 
+def _validate_selftest_run_id(run_id: str) -> None:
+    if not run_id or run_id in {".", ".."}:
+        raise ValueError("selftest run_id must be a non-empty directory name")
+    if "/" in run_id or "\\" in run_id:
+        raise ValueError("selftest run_id must not contain path separators")
+
+
 def generate_selftest_reports(run: str | Path, formats: list[str], *, base_dir: Path = Path("test-reports/selftest")) -> list[Path]:
     run_dir = resolve_selftest_run(run, base_dir=base_dir)
     manifest_path = run_dir / "selftest.json"
     if not manifest_path.exists():
         raise ValueError(f"missing selftest manifest: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if isinstance(manifest, dict):
+        manifest.setdefault("schema_version", SELFTEST_REPORT_SCHEMA_VERSION)
     generated: list[Path] = []
     for report_format in formats:
         normalized = report_format.strip().lower()

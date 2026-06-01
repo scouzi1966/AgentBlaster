@@ -61,6 +61,18 @@ agentblaster dashboard \
   --audit-log audit/control-plane.jsonl
 ```
 
+Dashboard provider-profile setup:
+
+- Provider profile changes made through `POST /api/providers` or the no-JavaScript `/providers` form use the dashboard's `--audit-log` path when configured.
+- These events are recorded as `provider_created` or `provider_updated` with `source: dashboard`.
+- The audit event records endpoint metadata and secret references, never raw API-key values.
+
+Dashboard provider-auth setup:
+
+- Provider auth changes made through `POST /api/providers/<provider>/auth` or the no-JavaScript `/providers/auth` form use the dashboard's `--audit-log` path when configured.
+- These events are recorded as `provider_auth_ref_changed` with `source: dashboard`.
+- The audit event records provider name, secret reference, backend kind, and whether the reference resolves, but never the submitted API-key value.
+
 ## Event Types
 
 - `provider_created` and `provider_updated`: provider profile writes.
@@ -77,6 +89,9 @@ agentblaster dashboard \
 - `matrix_policy_evaluation`: aggregate matrix size and case-count policy evaluation before dispatch.
 - `results_exported`: normalized result export generation.
 - `retention_cleanup_planned` and `retention_cleanup_executed`: retention-based cleanup planning and deletion.
+- `manual_cleanup_planned` and `manual_cleanup_executed`: operator-requested run cleanup planning and deletion.
+
+Use `--require-audit-log` on cleanup commands when enterprise policy requires cleanup planning or deletion to fail closed unless an audit log destination is configured.
 - `publication_bundle_created`: shareable report bundle creation.
 - `evidence_bundle_created`: static governance evidence bundle creation.
 - Benchmark run events such as `run_started`, `run_completed`, `policy_violation`, and `capability_violation`.
@@ -90,3 +105,7 @@ agentblaster dashboard \
 - Provider config audit events include TLS verification state and custom CA bundle path when configured.
 - Report/export audit events record generated artifact paths, formats, and source run directories.
 - Dashboard audit events record whether dashboard auth is enabled, but never the token or token environment variable value.
+
+## Dashboard Run Preview Events
+
+- `run_plan_previewed`: emitted when `POST /api/run-plan` or `/run-plan` builds a dry-run benchmark plan. The event records provider, suite, model, remote flag, concurrency, raw trace mode, total case count, and safety booleans. It must not record API keys, authorization headers, raw prompts, raw responses, secret reference names, or provider response bodies.

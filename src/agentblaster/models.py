@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -40,11 +41,32 @@ class SecretRef(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["env", "keyring"]
+    kind: Literal["env", "keyring", "dotenv"]
     name: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_reference_name(self) -> "SecretRef":
+        if self.kind == "env" and _ENV_SECRET_REF_NAME.fullmatch(self.name) is None:
+            raise ValueError("env secret references must be valid environment variable names")
+        if self.kind == "dotenv" and not _is_valid_dotenv_secret_ref_name(self.name):
+            raise ValueError("dotenv secret references must use VAR@/path/to/.env with a valid variable name")
+        if _looks_like_raw_secret_reference(self.name):
+            raise ValueError("secret reference names must not contain raw secret material")
+        return self
 
     def display(self) -> str:
         return f"{self.kind}:{self.name}"
+
+    def redacted_display(self) -> str:
+        if self.kind != "dotenv":
+            return self.display()
+        variable, separator, _path = self.name.partition("@")
+        if separator:
+            return f"{self.kind}:{variable}@<redacted-path>"
+        return f"{self.kind}:<redacted-path>"
+
+    def display_path_redacted(self) -> bool:
+        return self.redacted_display() != self.display()
 
 
 class ModelMetadata(BaseModel):
@@ -191,6 +213,8 @@ class AdapterResponse(BaseModel):
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     streaming: bool = False
     ttft_ms: float | None = None
+    canceled: bool = False
+    cancellation_latency_ms: float | None = None
 
 
 class TraceMessage(BaseModel):
@@ -242,6 +266,7 @@ class BenchmarkCase(BaseModel):
     skills: list[str] = Field(default_factory=list)
     metrics: list[str] = Field(default_factory=list)
     timeout_seconds: float = Field(default=30.0, gt=0.0, le=3600.0)
+    cancel_after_ms: int | None = Field(default=None, ge=1)
     streaming: bool = False
     max_tokens: int = Field(default=32, ge=1)
     temperature: float = Field(default=0.0, ge=0.0)
@@ -316,6 +341,7 @@ class BenchmarkResult(BaseModel):
     case_risk_level: str | None = None
     case_source_url: str | None = None
     case_license: str | None = None
+    cancel_after_ms: int | None = None
     suite: str
     provider: str
     contract: ApiContract
@@ -327,6 +353,10 @@ class BenchmarkResult(BaseModel):
     adapter_name: str | None = None
     adapter_version: str | None = None
     status_code: int | None = None
+    provider_request_id: str | None = None
+    response_content_type: str | None = None
+    provider_rate_limit_remaining: dict[str, Any] = Field(default_factory=dict)
+    provider_retry_after_ms: float | None = None
     request_started_at: str | None = None
     request_completed_at: str | None = None
     queue_ms: float | None = None
@@ -350,13 +380,30 @@ class BenchmarkResult(BaseModel):
     decode_ms: float | None = None
     tokens_per_second_prefill: float | None = None
     tokens_per_second_decode: float | None = None
+    telemetry_schema_version: str | None = None
+    stats_profile: str | None = None
+    telemetry_sources: dict[str, str] = Field(default_factory=dict)
+    telemetry_quality: dict[str, str] = Field(default_factory=dict)
+    telemetry_comparison_readiness: dict[str, Any] = Field(default_factory=dict)
+    telemetry_stats_comparability: dict[str, Any] = Field(default_factory=dict)
+    telemetry_missing: list[str] = Field(default_factory=list)
     raw_usage: dict[str, Any] = Field(default_factory=dict)
     raw_stats: dict[str, Any] = Field(default_factory=dict)
     tool_calls_requested: int | None = None
     tool_calls_emitted: int | None = None
     tool_calls_valid: int | None = None
+    invalid_tool_call_count: int | None = None
+    tool_parser_repair_valid: bool | None = None
+    tool_loop_enabled: bool | None = None
+    tool_loop_rounds: int | None = None
+    tool_loop_tool_call_count: int | None = None
+    tool_loop_max_tool_calls: int | None = None
+    tool_loop_stop_reason: str | None = None
     structured_output_valid: bool | None = None
+    judge_verdict_valid: bool | None = None
     finish_reason: str | None = None
+    canceled: bool | None = None
+    cancellation_latency_ms: float | None = None
     simulated_tool_results: list[SimulatedToolResult] = Field(default_factory=list)
     failure_class: str | None = None
     message: str = ""
@@ -381,6 +428,7 @@ class RunManifest(BaseModel):
     suite_provenance: SuiteProvenance = Field(default_factory=SuiteProvenance)
     metrics_artifacts: list[str] = Field(default_factory=list)
     provider_metadata: ProviderRunMetadata = Field(default_factory=ProviderRunMetadata)
+    engine_target: dict[str, Any] | None = None
     environment: EnvironmentSnapshot = Field(default_factory=EnvironmentSnapshot)
     model_metadata: ModelMetadata = Field(default_factory=ModelMetadata)
     retention_policy: RetentionPolicy = Field(default_factory=RetentionPolicy)
@@ -458,3 +506,26 @@ def _reject_url_secrets(url: str, field_name: str) -> None:
     query = parsed.query.lower()
     if any(marker in query for marker in ("token=", "api_key=", "apikey=", "password=", "secret=")):
         raise ValueError(f"{field_name} must not contain credential query parameters")
+
+
+_ENV_SECRET_REF_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_DOTENV_SECRET_REF_SEPARATOR = "@"
+
+
+def _is_valid_dotenv_secret_ref_name(value: str) -> bool:
+    variable, separator, path_text = value.partition(_DOTENV_SECRET_REF_SEPARATOR)
+    return (
+        separator == _DOTENV_SECRET_REF_SEPARATOR
+        and _ENV_SECRET_REF_NAME.fullmatch(variable) is not None
+        and bool(path_text.strip())
+    )
+
+
+def _looks_like_raw_secret_reference(value: str) -> bool:
+    stripped = value.strip()
+    lowered = stripped.lower()
+    if stripped != value or any(character in value for character in "\r\n\t"):
+        return True
+    if lowered.startswith(("sk-", "sk_", "xoxb-", "ghp_", "github_pat_")):
+        return True
+    return "bearer " in lowered

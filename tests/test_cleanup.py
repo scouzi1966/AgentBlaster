@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from agentblaster.cleanup import apply_expired_cleanup, cleanup_run, plan_expired_cleanup
+from agentblaster.cleanup import apply_expired_cleanup, cleanup_run, plan_cleanup_run, plan_expired_cleanup
 from agentblaster.models import ApiContract, RawTraceMode, RetentionPolicy, RunManifest
 
 
@@ -10,31 +10,79 @@ def test_cleanup_run_removes_selected_artifacts(tmp_path) -> None:
     run_dir = tmp_path / "run_test"
     raw_dir = run_dir / "raw"
     exports_dir = run_dir / "exports"
+    cache_dir = run_dir / "cache"
+    temp_dir = run_dir / "tmp"
+    bundle_dir = run_dir / "publication-bundles"
+    bundle_zip = run_dir / "qwen.agentblaster-publication.zip"
     raw_dir.mkdir(parents=True)
     exports_dir.mkdir()
+    cache_dir.mkdir()
+    temp_dir.mkdir()
+    bundle_dir.mkdir()
     (raw_dir / "response.json").write_text("{}", encoding="utf-8")
     (exports_dir / "results.csv").write_text("x", encoding="utf-8")
+    (cache_dir / "prefill.bin").write_text("cache", encoding="utf-8")
+    (temp_dir / "scratch.json").write_text("{}", encoding="utf-8")
+    (bundle_dir / "bundle-manifest.json").write_text("{}", encoding="utf-8")
+    bundle_zip.write_text("zip", encoding="utf-8")
     (run_dir / "report.html").write_text("<html></html>", encoding="utf-8")
     (run_dir / "report.md").write_text("# report", encoding="utf-8")
+    (run_dir / "report.pdf").write_text("%PDF-1.4\n", encoding="utf-8")
     (run_dir / "report-card.svg").write_text("<svg></svg>", encoding="utf-8")
+    (run_dir / "report-card.png").write_bytes(b"\x89PNG\n")
     (run_dir / "publication.json").write_text("{}", encoding="utf-8")
     (run_dir / "summary.json").write_text("{}", encoding="utf-8")
     (run_dir / "results.jsonl").write_text("{}", encoding="utf-8")
 
-    removed = cleanup_run(run_dir, raw=True, reports=True, exports=True)
+    removed = cleanup_run(run_dir, raw=True, reports=True, exports=True, caches=True, temp=True, bundles=True)
 
     assert raw_dir in removed
     assert exports_dir in removed
+    assert cache_dir in removed
+    assert temp_dir in removed
+    assert bundle_dir in removed
+    assert bundle_zip in removed
     assert run_dir / "report.html" in removed
     assert run_dir / "report.md" in removed
+    assert run_dir / "report.pdf" in removed
     assert run_dir / "report-card.svg" in removed
+    assert run_dir / "report-card.png" in removed
     assert run_dir / "publication.json" in removed
     assert not raw_dir.exists()
     assert not exports_dir.exists()
+    assert not cache_dir.exists()
+    assert not temp_dir.exists()
+    assert not bundle_dir.exists()
+    assert not bundle_zip.exists()
     assert not (run_dir / "report.html").exists()
     assert not (run_dir / "report.md").exists()
+    assert not (run_dir / "report.pdf").exists()
     assert not (run_dir / "report-card.svg").exists()
+    assert not (run_dir / "report-card.png").exists()
     assert not (run_dir / "publication.json").exists()
+    assert (run_dir / "results.jsonl").exists()
+
+
+def test_plan_cleanup_run_lists_selected_artifacts_without_deleting(tmp_path) -> None:
+    run_dir = tmp_path / "run_test"
+    raw_dir = run_dir / "raw"
+    cache_dir = run_dir / "cache"
+    bundle_zip = run_dir / "qwen.agentblaster-publication.zip"
+    raw_dir.mkdir(parents=True)
+    cache_dir.mkdir()
+    (raw_dir / "response.json").write_text("{}", encoding="utf-8")
+    (cache_dir / "prefill.bin").write_text("cache", encoding="utf-8")
+    bundle_zip.write_text("zip", encoding="utf-8")
+    (run_dir / "results.jsonl").write_text("{}", encoding="utf-8")
+
+    planned = plan_cleanup_run(run_dir, raw=True, caches=True, bundles=True)
+
+    assert raw_dir in planned
+    assert cache_dir in planned
+    assert bundle_zip in planned
+    assert raw_dir.exists()
+    assert cache_dir.exists()
+    assert bundle_zip.exists()
     assert (run_dir / "results.jsonl").exists()
 
 

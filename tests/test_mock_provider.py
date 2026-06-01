@@ -75,6 +75,52 @@ def test_mock_provider_serves_tool_calls_responses_and_anthropic_messages() -> N
             },
             timeout=2.0,
         )
+        route_chat = httpx.post(
+            f"{base_url}/chat/completions",
+            json={
+                "model": "agentblaster-mock-qwen3.6-27b-dense",
+                "messages": [
+                    {"role": "user", "content": "Use route_agentblaster_task with route_id set to agentblaster-route-loop-final."}
+                ],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "route_agentblaster_task",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"route_id": {"type": "string"}},
+                                "required": ["route_id"],
+                            },
+                        },
+                    }
+                ],
+            },
+            timeout=2.0,
+        )
+        mcp_chat = httpx.post(
+            f"{base_url}/chat/completions",
+            json={
+                "model": "agentblaster-mock-qwen3.6-27b-dense",
+                "messages": [
+                    {"role": "user", "content": "Call mcp_fixture_read_resource with uri fixture://mcp/resource/status."}
+                ],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "mcp_fixture_read_resource",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"uri": {"type": "string"}},
+                                "required": ["uri"],
+                            },
+                        },
+                    }
+                ],
+            },
+            timeout=2.0,
+        )
 
         assert chat.json()["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "ping_agentblaster"
         assert json.loads(chat.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])["target"] == "marker-1"
@@ -82,6 +128,10 @@ def test_mock_provider_serves_tool_calls_responses_and_anthropic_messages() -> N
         assert json.loads(responses.json()["output"][1]["arguments"])["target"] == "marker-2"
         assert anthropic.json()["content"][1]["type"] == "tool_use"
         assert anthropic.json()["content"][1]["input"]["target"] == "marker-3"
+        route_args = json.loads(route_chat.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
+        assert route_args == {"confidence": "high", "route_id": "agentblaster-route-loop-final"}
+        mcp_args = json.loads(mcp_chat.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
+        assert mcp_args == {"uri": "fixture://mcp/resource/status"}
     finally:
         server.shutdown()
         server.server_close()

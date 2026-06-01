@@ -8,7 +8,9 @@ AgentBlaster treats agentic workflow support as explicit benchmark input surface
 - `mcp-fixtures`: static MCP-style tool, resource, and prompt fixtures, including wide tool catalogs for prefill pressure.
 - `skill-packs`: deterministic skill preambles for local-agent workflow pressure, large repeated system prompts, and instruction retention.
 - `lcp-emerging`: fixture-only local context protocol style workflows: scoped context bundles, session memory, retrieval attachments, and redacted context metadata.
-- `harness-engineering`: generated benchmark-method workloads such as prefill, concurrency, contract fuzzing, metamorphic variants, and cache replay.
+- `harness-engineering`: generated benchmark-method workloads such as prefill, concurrency, contract fuzzing, metamorphic variants, cache replay, orchestration, mixed emerging MCP/LCP/skills/tool-loop stacks, and judge rubrics.
+
+Each catalog item includes `capability_requirements`, the provider-side capability keys that may be required when suites exercise that workflow surface. For example, harness-engineering can imply `structured_output`, `judge_rubric`, `prompt_caching`, `tool_calling`, `tool_loop`, `streaming`, `cancellation`, or `trace_replay` depending on the generated profile.
 
 ## Commands
 
@@ -30,5 +32,6 @@ Use the catalog to answer these release and benchmark-design questions:
 - Which workflow families are covered by a benchmark suite or release candidate?
 - Which surfaces are stable fixtures versus emerging or experimental research surfaces?
 - Which surfaces impose large prompt/prefix pressure and should be correlated with TTFT, prefill throughput, cached input tokens, and cache hit ratios?
+- Which provider capability declarations must be reviewed before strict capability preflight is enabled?
 - Which surfaces require enterprise policy allowlists before provider dispatch?
 - Which future surfaces need fixture coverage before they become scoring dimensions?

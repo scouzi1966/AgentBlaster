@@ -45,7 +45,7 @@ cases:
 
 - OpenAI Chat Completions receive the trace as `messages`.
 - OpenAI Responses receives the trace as structured `input`.
-- Anthropic Messages maps `system` messages to top-level `system`, assistant `tool_calls` to `tool_use` content blocks, and `tool` messages to user `tool_result` content blocks.
+- Anthropic Messages maps `system` messages to top-level `system`, assistant `tool_calls` to `tool_use` content blocks, and `tool` messages to user `tool_result` content blocks. When a case declares `cache_control`, Anthropic serialization can mark static system instructions and the final tool-catalog entry as cache breakpoints.
 - Ollama native chat receives the trace as chat `messages`.
 
 ## Policy And Security

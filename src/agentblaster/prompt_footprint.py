@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agentblaster.lcp import lcp_profile_text
 from agentblaster.mcp import mcp_profile_tool_schemas
 from agentblaster.models import BenchmarkCase, SuiteDefinition
 from agentblaster.skills import skill_prefix
@@ -19,6 +20,7 @@ COMPONENTS = (
     "tools",
     "simulated_tools",
     "mcp_profile",
+    "lcp_profile",
     "skills",
 )
 
@@ -30,6 +32,7 @@ def suite_prompt_footprint(suite: SuiteDefinition) -> dict[str, Any]:
         for component, value in case["component_tokens"].items():
             component_totals[component] = component_totals.get(component, 0) + int(value)
     shared_static_prefixes = _shared_static_prefixes(cases)
+    shared_static_reuse = _shared_static_reuse(shared_static_prefixes)
     max_case_tokens = max((case["estimated_prompt_tokens"] for case in cases), default=0)
     total_tokens = sum(case["estimated_prompt_tokens"] for case in cases)
     return {
@@ -42,11 +45,13 @@ def suite_prompt_footprint(suite: SuiteDefinition) -> dict[str, Any]:
         "component_totals": component_totals,
         "prefill_pressure": _prefill_pressure(total_tokens, max_case_tokens, shared_static_prefixes),
         "shared_static_prefixes": shared_static_prefixes,
+        "shared_static_reuse": shared_static_reuse,
         "cases": cases,
         "notes": [
             "Token estimates use a deterministic character-count heuristic and are intended for planning, not billing.",
-            "Static prefix tokens include system prompts, tool schemas, simulated tool schemas, MCP catalogs, and skill text.",
+            "Static prefix tokens include system prompts, tool schemas, simulated tool schemas, MCP catalogs, LCP context bundles, and skill text.",
             "Repeated shared static prefixes are relevant to provider prompt cache and prefill behavior.",
+            "Potential cache-reuse tokens estimate duplicated static-prefix tokens after the first case in each shared-prefix group.",
         ],
     }
 
@@ -65,6 +70,7 @@ def format_prompt_footprint_report(report: dict[str, Any]) -> str:
         f"total_estimated_prompt_tokens: {report['total_estimated_prompt_tokens']}",
         f"max_case_estimated_prompt_tokens: {report['max_case_estimated_prompt_tokens']}",
         f"prefill_pressure: {report['prefill_pressure']['level']} ({report['prefill_pressure']['score']})",
+        f"potential_cache_reuse_tokens: {report['shared_static_reuse']['potential_cache_reuse_tokens']}",
         "component_totals:",
     ]
     for component, value in report["component_totals"].items():
@@ -90,13 +96,13 @@ def _case_footprint(case: BenchmarkCase) -> dict[str, Any]:
     component_tokens = {name: _estimate_tokens(value) for name, value in components.items()}
     static_tokens = sum(
         component_tokens[name]
-        for name in ("system_prompt", "cache_control", "tools", "simulated_tools", "mcp_profile", "skills")
+        for name in ("system_prompt", "cache_control", "tools", "simulated_tools", "mcp_profile", "lcp_profile", "skills")
     )
     dynamic_tokens = component_tokens["prompt"] + component_tokens["messages"]
     total_tokens = max(1, static_tokens + dynamic_tokens)
     static_payload = "\n".join(
         components[name]
-        for name in ("system_prompt", "cache_control", "tools", "simulated_tools", "mcp_profile", "skills")
+        for name in ("system_prompt", "cache_control", "tools", "simulated_tools", "mcp_profile", "lcp_profile", "skills")
         if components[name]
     )
     return {
@@ -119,6 +125,7 @@ def _case_components(case: BenchmarkCase) -> dict[str, str]:
     explicit_tools = json.dumps(case.tools, sort_keys=True, separators=(",", ":")) if case.tools else ""
     sim_tools = json.dumps(simulated_tool_schemas(case.simulated_tools), sort_keys=True, separators=(",", ":")) if case.simulated_tools else ""
     mcp_tools = json.dumps(mcp_profile_tool_schemas(case.mcp_profile), sort_keys=True, separators=(",", ":")) if case.mcp_profile else ""
+    lcp_text = lcp_profile_text(case.lcp_profile) if case.lcp_profile else ""
     messages = (
         json.dumps(
             [message.model_dump(mode="json", exclude_none=True) for message in case.messages],
@@ -136,6 +143,7 @@ def _case_components(case: BenchmarkCase) -> dict[str, str]:
         "tools": explicit_tools,
         "simulated_tools": sim_tools,
         "mcp_profile": mcp_tools,
+        "lcp_profile": lcp_text,
         "skills": skill_prefix(case.skills) if case.skills else "",
     }
 
@@ -154,12 +162,16 @@ def _surfaces(case: BenchmarkCase) -> list[str]:
         surfaces.append("simulated-tools")
     if case.mcp_profile:
         surfaces.append("mcp")
+    if case.lcp_profile:
+        surfaces.append("lcp")
     if case.skills:
         surfaces.append("skills")
     if case.response_format:
         surfaces.append("structured")
     if case.streaming:
         surfaces.append("streaming")
+    if case.cancel_after_ms is not None:
+        surfaces.append("cancellation")
     return surfaces
 
 
@@ -184,8 +196,28 @@ def _shared_static_prefixes(cases: list[dict[str, Any]]) -> list[dict[str, Any]]
     return shared
 
 
+def _shared_static_reuse(shared_static_prefixes: list[dict[str, Any]]) -> dict[str, int]:
+    shared_static_tokens = sum(int(item["case_count"]) * int(item["static_tokens"]) for item in shared_static_prefixes)
+    potential_cache_reuse_tokens = sum(
+        max(int(item["case_count"]) - 1, 0) * int(item["static_tokens"])
+        for item in shared_static_prefixes
+    )
+    return {
+        "group_count": len(shared_static_prefixes),
+        "case_count": sum(int(item["case_count"]) for item in shared_static_prefixes),
+        "repeated_case_count": sum(max(int(item["case_count"]) - 1, 0) for item in shared_static_prefixes),
+        "shared_static_tokens": shared_static_tokens,
+        "potential_cache_reuse_tokens": potential_cache_reuse_tokens,
+        "max_group_case_count": max((int(item["case_count"]) for item in shared_static_prefixes), default=0),
+    }
+
+
 def _prefill_pressure(total_tokens: int, max_case_tokens: int, shared_static_prefixes: list[dict[str, Any]]) -> dict[str, Any]:
     shared_bonus = sum(item["case_count"] * item["static_tokens"] for item in shared_static_prefixes)
+    potential_cache_reuse_tokens = sum(
+        max(int(item["case_count"]) - 1, 0) * int(item["static_tokens"])
+        for item in shared_static_prefixes
+    )
     score = total_tokens + max_case_tokens + shared_bonus
     if score >= 20000:
         level = "extreme"
@@ -195,7 +227,12 @@ def _prefill_pressure(total_tokens: int, max_case_tokens: int, shared_static_pre
         level = "moderate"
     else:
         level = "low"
-    return {"score": score, "level": level, "shared_static_bonus": shared_bonus}
+    return {
+        "score": score,
+        "level": level,
+        "shared_static_bonus": shared_bonus,
+        "potential_cache_reuse_tokens": potential_cache_reuse_tokens,
+    }
 
 
 def _estimate_tokens(text: str) -> int:

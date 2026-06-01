@@ -7,16 +7,20 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from agentblaster.costs import estimate_costs
 from agentblaster.errors import ConfigError, PolicyError
 from agentblaster.lcp import lcp_profile_text
 from agentblaster.mcp import mcp_profile_tool_schemas
-from agentblaster.models import BenchmarkCase, ProviderConfig, RawTraceMode, SuiteDefinition
+from agentblaster.models import BenchmarkCase, ProviderConfig, RawTraceMode, SecretRef, SuiteDefinition
 from agentblaster.rate_limits import rate_limit_max_concurrency
 from agentblaster.skills import skill_prefix
 from agentblaster.toolsim import simulated_tool_schemas
+
+
+ENTERPRISE_POLICY_TEMPLATE_SCHEMA_VERSION = "agentblaster.enterprise-policy-template.v1"
+POLICY_CONTROL_SUMMARY_SCHEMA_VERSION = "agentblaster.policy-control-summary.v1"
 
 
 class SecurityPolicy(BaseModel):
@@ -27,9 +31,15 @@ class SecurityPolicy(BaseModel):
     allowed_providers: set[str] | None = None
     allowed_base_url_hosts: set[str] | None = None
     allowed_metrics_url_hosts: set[str] | None = None
-    allowed_secret_ref_kinds: set[Literal["env", "keyring"]] | None = None
+    allowed_secret_ref_kinds: set[Literal["env", "keyring", "dotenv"]] | None = None
+    allowed_secret_ref_names: set[str] | None = None
+    allowed_secret_ref_prefixes: set[str] | None = None
     allow_remote_providers: bool = True
     require_api_key_for_remote_providers: bool = False
+    require_cost_model_for_remote_providers: bool = False
+    require_rate_limits_for_remote_providers: bool = False
+    allow_non_loopback_http_provider_urls: bool = False
+    allow_non_loopback_http_metrics_urls: bool = False
     allow_full_raw_traces: bool = False
     allow_insecure_tls: bool = False
     allow_tool_schemas: bool = True
@@ -63,6 +73,14 @@ class SecurityPolicy(BaseModel):
     allowed_dashboard_ports: set[int] | None = None
     allow_dashboard_non_loopback: bool = False
     require_dashboard_auth: bool = False
+    require_cleanup_audit_log: bool = False
+
+    @field_validator("allowed_secret_ref_names", "allowed_secret_ref_prefixes")
+    @classmethod
+    def reject_empty_secret_ref_policy_values(cls, value: set[str] | None) -> set[str] | None:
+        if value is not None and any(not item for item in value):
+            raise ValueError("secret reference policy names and prefixes must be non-empty")
+        return value
 
 
 def load_policy(path: Path | None) -> SecurityPolicy:
@@ -73,6 +91,204 @@ def load_policy(path: Path | None) -> SecurityPolicy:
         return SecurityPolicy.model_validate(data)
     except (OSError, ValidationError, yaml.YAMLError) as exc:
         raise ConfigError(f"invalid policy file at {path}: {exc}") from exc
+
+
+def enterprise_policy_template(*, profile: Literal["local", "remote-gateway"] = "local") -> dict[str, Any]:
+    """Return a redaction-safe corporate baseline policy template."""
+
+    remote_enabled = profile == "remote-gateway"
+    policy = SecurityPolicy(
+        allowed_providers={
+            "afm",
+            "mlx-lm",
+            "ollama",
+            "ollama-native",
+            "lm-studio",
+            "lm-studio-responses",
+            "lm-studio-native",
+            "omlx",
+            "rapid-mlx",
+            "vllm-mlx",
+            "openai-compatible-remote",
+            "anthropic-compatible-remote",
+        },
+        allowed_base_url_hosts={"127.0.0.1", "localhost"} if not remote_enabled else {"127.0.0.1", "localhost", "gateway.example.com"},
+        allowed_metrics_url_hosts={"127.0.0.1", "localhost"},
+        allowed_secret_ref_kinds={"env", "keyring"},
+        allowed_secret_ref_prefixes={"AGENTBLASTER_", "OPENAI_", "ANTHROPIC_", "WORKSPACE_", "afm:", "lm-studio:", "openai", "anthropic"},
+        allow_remote_providers=remote_enabled,
+        require_api_key_for_remote_providers=True,
+        require_cost_model_for_remote_providers=True,
+        require_rate_limits_for_remote_providers=True,
+        allow_non_loopback_http_provider_urls=False,
+        allow_non_loopback_http_metrics_urls=False,
+        allow_full_raw_traces=False,
+        allow_insecure_tls=False,
+        allow_tool_schemas=True,
+        allow_simulated_tools=True,
+        allowed_simulated_tools={"search_docs", "read_file_fixture", "shell_fixture", "browser_fetch_fixture", "mcp_echo"},
+        allow_mcp_profiles=True,
+        allowed_mcp_profiles={"fixture-mcp", "wide-mcp-32"},
+        allow_lcp_profiles=True,
+        allowed_lcp_profiles={"fixture-lcp", "wide-lcp-context"},
+        allow_skills=True,
+        allowed_skills={"repo-triage", "safe-tool-replay", "agent-planning", "large-prefix-diagnostic"},
+        require_max_tool_calls_for_tool_cases=True,
+        max_tool_calls_per_case=8,
+        allowed_case_provenance={
+            "synthetic_representative",
+            "internal_regression",
+            "customer_trace_sanitized",
+            "primary_source",
+            "public_benchmark_adapted",
+        },
+        allowed_case_risk_levels={"low", "medium"},
+        allow_high_risk_cases=False,
+        require_source_url_for_external_cases=True,
+        require_license_for_external_cases=True,
+        max_concurrency=8,
+        max_cases=500,
+        max_matrix_runs=25,
+        max_matrix_total_cases=2500,
+        max_output_tokens=4096,
+        max_timeout_seconds=600,
+        max_estimated_matrix_cost_usd=25.0 if remote_enabled else None,
+        allowed_dashboard_hosts={"127.0.0.1", "localhost"},
+        allowed_dashboard_ports={8765},
+        allow_dashboard_non_loopback=False,
+        require_dashboard_auth=True,
+        require_cleanup_audit_log=True,
+    )
+    return {
+        "schema_version": ENTERPRISE_POLICY_TEMPLATE_SCHEMA_VERSION,
+        "profile": profile,
+        "policy": policy.model_dump(mode="json", exclude_none=True),
+        "review_notes": [
+            "Template stores only policy controls, never API-key values.",
+            "Keyring/Apple Keychain is optional; env references remain the portable enterprise baseline.",
+            "Dotenv plaintext fallback is intentionally excluded from the enterprise baseline.",
+            "Replace gateway.example.com with approved corporate API gateway hosts before enabling remote providers.",
+        ],
+    }
+
+
+def enterprise_policy_template_yaml(*, profile: Literal["local", "remote-gateway"] = "local") -> str:
+    return yaml.safe_dump(enterprise_policy_template(profile=profile)["policy"], sort_keys=True)
+
+
+def policy_control_summary(policy: SecurityPolicy, *, name: str = "policy") -> dict[str, Any]:
+    """Return a compact review artifact for enterprise policy posture."""
+
+    controls = {
+        "provider_allowlist": policy.allowed_providers is not None,
+        "provider_host_allowlist": policy.allowed_base_url_hosts is not None,
+        "metrics_host_allowlist": policy.allowed_metrics_url_hosts is not None,
+        "remote_providers_allowed": policy.allow_remote_providers,
+        "remote_api_key_required": policy.require_api_key_for_remote_providers,
+        "remote_cost_model_required": policy.require_cost_model_for_remote_providers,
+        "remote_rate_limits_required": policy.require_rate_limits_for_remote_providers,
+        "non_loopback_http_provider_urls_allowed": policy.allow_non_loopback_http_provider_urls,
+        "non_loopback_http_metrics_urls_allowed": policy.allow_non_loopback_http_metrics_urls,
+        "insecure_tls_allowed": policy.allow_insecure_tls,
+        "full_raw_traces_allowed": policy.allow_full_raw_traces,
+        "secret_backend_restricted": policy.allowed_secret_ref_kinds is not None,
+        "secret_name_restricted": policy.allowed_secret_ref_names is not None or policy.allowed_secret_ref_prefixes is not None,
+        "dashboard_auth_required": policy.require_dashboard_auth,
+        "dashboard_non_loopback_allowed": policy.allow_dashboard_non_loopback,
+        "cleanup_audit_log_required": policy.require_cleanup_audit_log,
+        "suite_capability_surfaces_restricted": any(
+            value is not None
+            for value in (
+                policy.allowed_tool_names,
+                policy.allowed_simulated_tools,
+                policy.allowed_mcp_profiles,
+                policy.allowed_lcp_profiles,
+                policy.allowed_skills,
+            )
+        ),
+        "tool_call_bounds_required": policy.require_max_tool_calls_for_tool_cases or policy.max_tool_calls_per_case is not None,
+        "case_governance_restricted": any(
+            value is not None
+            for value in (
+                policy.allowed_case_provenance,
+                policy.allowed_case_risk_levels,
+            )
+        )
+        or not policy.allow_high_risk_cases
+        or policy.require_source_url_for_external_cases
+        or policy.require_license_for_external_cases,
+        "cost_ceilings_configured": any(
+            value is not None
+            for value in (
+                policy.max_estimated_case_cost_usd,
+                policy.max_estimated_run_cost_usd,
+                policy.max_estimated_matrix_cost_usd,
+            )
+        ),
+        "scale_ceilings_configured": any(
+            value is not None
+            for value in (
+                policy.max_prompt_tokens,
+                policy.max_concurrency,
+                policy.max_cases,
+                policy.max_matrix_runs,
+                policy.max_matrix_total_cases,
+                policy.max_output_tokens,
+                policy.max_timeout_seconds,
+            )
+        ),
+    }
+    blockers = [
+        name
+        for name, unsafe in {
+            "remote providers allowed without API-key requirement": policy.allow_remote_providers and not policy.require_api_key_for_remote_providers,
+            "remote providers allowed without cost-model requirement": policy.allow_remote_providers and not policy.require_cost_model_for_remote_providers,
+            "remote providers allowed without rate-limit requirement": policy.allow_remote_providers and not policy.require_rate_limits_for_remote_providers,
+            "non-loopback HTTP provider URLs allowed": policy.allow_non_loopback_http_provider_urls,
+            "non-loopback HTTP metrics URLs allowed": policy.allow_non_loopback_http_metrics_urls,
+            "insecure TLS allowed": policy.allow_insecure_tls,
+            "full raw traces allowed": policy.allow_full_raw_traces,
+            "dashboard auth not required": not policy.require_dashboard_auth,
+            "cleanup audit log not required": not policy.require_cleanup_audit_log,
+            "plaintext dotenv secret backend allowed": policy.allowed_secret_ref_kinds is not None and "dotenv" in policy.allowed_secret_ref_kinds,
+            "high-risk cases allowed": policy.allow_high_risk_cases,
+        }.items()
+        if unsafe
+    ]
+    warnings = [
+        name
+        for name, weak in {
+            "provider allowlist not configured": policy.allowed_providers is None,
+            "provider host allowlist not configured": policy.allowed_base_url_hosts is None,
+            "metrics host allowlist not configured": policy.allowed_metrics_url_hosts is None,
+            "secret backend restriction not configured": policy.allowed_secret_ref_kinds is None,
+            "secret name/prefix restriction not configured": policy.allowed_secret_ref_names is None and policy.allowed_secret_ref_prefixes is None,
+            "cost ceilings not configured": not controls["cost_ceilings_configured"],
+            "scale ceilings not configured": not controls["scale_ceilings_configured"],
+            "suite capability surface allowlists not configured": not controls["suite_capability_surfaces_restricted"],
+        }.items()
+        if weak
+    ]
+    return {
+        "schema_version": POLICY_CONTROL_SUMMARY_SCHEMA_VERSION,
+        "name": name,
+        "enterprise_ready": not blockers,
+        "summary": {
+            "control_count": len(controls),
+            "enabled_controls": sum(1 for value in controls.values() if value),
+            "blockers": len(blockers),
+            "warnings": len(warnings),
+        },
+        "controls": controls,
+        "blockers": blockers,
+        "warnings": warnings,
+        "security": {
+            "contains_secrets": False,
+            "contains_raw_provider_payloads": False,
+            "resolves_secret_references": False,
+            "contacts_providers": False,
+        },
+    }
 
 
 def enforce_provider_policy(
@@ -92,6 +308,12 @@ def enforce_provider_policy(
     if provider.remote and policy.require_api_key_for_remote_providers and provider.api_key_ref is None:
         raise PolicyError(f"remote provider requires an API key reference by policy: {provider.name}")
 
+    if provider.remote and policy.require_cost_model_for_remote_providers and not provider.cost_model:
+        raise PolicyError(f"remote provider requires a cost model by policy: {provider.name}")
+
+    if provider.remote and policy.require_rate_limits_for_remote_providers and not provider.rate_limits:
+        raise PolicyError(f"remote provider requires rate limits by policy: {provider.name}")
+
     if provider.api_key_ref is not None and policy.allowed_secret_ref_kinds is not None:
         if provider.api_key_ref.kind not in policy.allowed_secret_ref_kinds:
             raise PolicyError(
@@ -99,20 +321,39 @@ def enforce_provider_policy(
                 f"{provider.api_key_ref.kind}"
             )
 
+    if provider.api_key_ref is not None and not _secret_ref_name_allowed(provider.api_key_ref, policy):
+        raise PolicyError(f"secret reference name is not allowed by policy for provider {provider.name}")
+
     if not provider.tls_verify and not policy.allow_insecure_tls:
         raise PolicyError(f"insecure TLS is disabled by policy: {provider.name}")
 
-    host = urlparse(str(provider.base_url)).hostname
+    parsed_base_url = urlparse(str(provider.base_url))
+    host = parsed_base_url.hostname
     if policy.allowed_base_url_hosts is not None and host not in policy.allowed_base_url_hosts:
         raise PolicyError(f"base URL host is not allowed by policy: {host}")
+    if (
+        parsed_base_url.scheme == "http"
+        and host is not None
+        and not _is_loopback_host(host)
+        and not policy.allow_non_loopback_http_provider_urls
+    ):
+        raise PolicyError(f"non-loopback HTTP provider base URLs are disabled by policy: {host}")
 
-    metrics_host = urlparse(str(provider.metrics_url)).hostname if provider.metrics_url is not None else None
+    parsed_metrics_url = urlparse(str(provider.metrics_url)) if provider.metrics_url is not None else None
+    metrics_host = parsed_metrics_url.hostname if parsed_metrics_url is not None else None
     if metrics_host is not None:
         if policy.allowed_metrics_url_hosts is not None:
             if metrics_host not in policy.allowed_metrics_url_hosts:
                 raise PolicyError(f"metrics URL host is not allowed by policy: {metrics_host}")
         elif not _is_loopback_host(metrics_host):
             raise PolicyError(f"metrics URL host must be loopback or explicitly allowlisted by policy: {metrics_host}")
+        if (
+            parsed_metrics_url is not None
+            and parsed_metrics_url.scheme == "http"
+            and not _is_loopback_host(metrics_host)
+            and not policy.allow_non_loopback_http_metrics_urls
+        ):
+            raise PolicyError(f"non-loopback HTTP metrics URLs are disabled by policy: {metrics_host}")
 
     if raw_trace_mode is RawTraceMode.FULL and not policy.allow_full_raw_traces:
         raise PolicyError("full raw traces are disabled by policy")
@@ -182,6 +423,18 @@ def enforce_suite_policy(provider: ProviderConfig, policy: SecurityPolicy, suite
             f"suite estimated cost ${estimated_run_cost:.9f} "
             f"exceeds policy max_estimated_run_cost_usd ${policy.max_estimated_run_cost_usd:.9f}"
         )
+
+
+def _secret_ref_name_allowed(ref: SecretRef, policy: SecurityPolicy) -> bool:
+    names = policy.allowed_secret_ref_names
+    prefixes = policy.allowed_secret_ref_prefixes
+    if names is None and prefixes is None:
+        return True
+    if names is not None and ref.name in names:
+        return True
+    if prefixes is not None and any(ref.name.startswith(prefix) for prefix in prefixes):
+        return True
+    return False
 
 
 def enforce_matrix_policy(
