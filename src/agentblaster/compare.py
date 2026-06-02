@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from agentblaster.reports import load_manifest, load_results
 
+COMPARISON_SCHEMA_VERSION = "agentblaster.comparison.v1"
+
 
 class RunComparisonRow(BaseModel):
     run_id: str
@@ -101,7 +103,16 @@ def write_comparison_json(run_dirs: list[Path], output_path: Path) -> Path:
     rows = compare_runs(run_dirs)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        json.dumps([row.model_dump(mode="json") for row in rows], indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            {
+                "schema_version": COMPARISON_SCHEMA_VERSION,
+                "run_count": len(rows),
+                "rows": [row.model_dump(mode="json") for row in rows],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return output_path

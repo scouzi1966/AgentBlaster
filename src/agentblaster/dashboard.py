@@ -903,6 +903,291 @@ def dashboard_catalog_index() -> dict[str, Any]:
     }
 
 
+def dashboard_catalog_payload(
+    catalog_id: str,
+    *,
+    project_root: Path,
+    policy: SecurityPolicy | None = None,
+    query: dict[str, list[str]] | None = None,
+) -> tuple[dict[str, Any], str]:
+    if catalog_id == "providers":
+        return {"providers": dashboard_providers()}, "/api/providers"
+    if catalog_id == "setup-status":
+        return dashboard_setup_status(policy=policy), "/api/setup-status"
+    if catalog_id == "suites":
+        return {"suites": dashboard_suites()}, "/api/suites"
+    if catalog_id == "models":
+        return dashboard_model_targets(), "/api/models"
+    if catalog_id == "engine-targets":
+        return dashboard_engine_targets(), "/api/engine-targets"
+    if catalog_id == "local-engine-onboarding":
+        return dashboard_local_engine_onboarding(), "/api/local-engine-onboarding"
+    if catalog_id == "workflow-surfaces":
+        return dashboard_workflow_surfaces(), "/api/workflow-surfaces"
+    if catalog_id == "telemetry-mappings":
+        return dashboard_telemetry_mappings(), "/api/telemetry-mappings"
+    if catalog_id == "review-artifacts":
+        return dashboard_review_artifacts(project_root), "/api/review-artifacts"
+    if catalog_id == "campaign-preview":
+        return dashboard_campaign_preview(query), "/api/campaign-preview"
+    if catalog_id == "run-plan":
+        return {
+            "schema_version": "agentblaster.dashboard-run-plan-endpoint.v1",
+            "method": "POST",
+            "description": "Submit provider, suite, model, raw_traces, concurrency, allow_remote, and optional capability_preflight to build a no-dispatch run plan.",
+            "safety": {
+                "dispatches_requests": False,
+                "contacts_provider": False,
+                "resolves_secrets": False,
+                "writes_run_artifacts": False,
+                "policy_enforced": True,
+            },
+            "ui": {"form": "/", "submit": "Preview plan"},
+        }, "/api/run-plan"
+    if catalog_id == "run-launch":
+        return {
+            "schema_version": "agentblaster.dashboard-run-launch-endpoint.v1",
+            "method": "POST",
+            "description": "Policy-gated benchmark launch endpoint that dispatches provider requests and writes run artifacts.",
+            "safety": {
+                "dispatches_requests": True,
+                "contacts_provider": True,
+                "resolves_secrets": True,
+                "writes_run_artifacts": True,
+                "policy_enforced": True,
+            },
+            "ui": {"form": "/", "submit": "Launch"},
+        }, "/api/runs"
+    if catalog_id == "runs":
+        return {"runs": list_dashboard_runs(project_root / "runs")}, "/api/runs"
+    raise ConfigError(f"unknown catalog: {catalog_id}")
+
+
+def render_dashboard_catalog_html(
+    catalog_id: str,
+    *,
+    project_root: Path,
+    policy: SecurityPolicy | None = None,
+    query: dict[str, list[str]] | None = None,
+) -> str:
+    index = dashboard_catalog_index()
+    catalog = next((item for item in index["catalogs"] if item["id"] == catalog_id), None)
+    if catalog is None:
+        raise ConfigError(f"unknown catalog: {catalog_id}")
+    payload, api_href = dashboard_catalog_payload(catalog_id, project_root=project_root, policy=policy, query=query)
+    title = catalog_id.replace("-", " ").title()
+    description = str(catalog.get("description") or "")
+    summary = _catalog_summary_cards(payload)
+    sections = _catalog_detail_sections(payload)
+    raw_json = html.escape(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentBlaster Catalog - {html.escape(title)}</title>
+  <style>
+    :root {{
+      --ink: #111915;
+      --muted: #637066;
+      --paper: #fffdf4;
+      --card: rgba(255, 255, 255, 0.72);
+      --line: #d8cdb8;
+      --accent: #a45c2a;
+      --accent-dark: #70411f;
+      --shadow: 0 24px 70px rgba(47, 35, 18, 0.16);
+    }}
+    body {{ background: radial-gradient(circle at top left, #f7ecd2, #f7f4e9 45%, #ece1cc); color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; }}
+    main {{ margin: 0 auto; max-width: 1180px; padding: 42px 26px 70px; }}
+    a {{ color: var(--accent-dark); font-weight: 800; }}
+    .crumb {{ margin-bottom: 22px; }}
+    .hero, .panel {{ background: var(--paper); border: 1px solid var(--line); border-radius: 28px; box-shadow: var(--shadow); padding: 28px; }}
+    .hero {{ margin-bottom: 26px; }}
+    .kicker {{ color: var(--accent); font-size: 12px; font-weight: 900; letter-spacing: 0.15em; text-transform: uppercase; }}
+    h1 {{ font-family: Georgia, serif; font-size: clamp(42px, 6vw, 78px); line-height: 0.94; margin: 10px 0 16px; }}
+    h2 {{ font-size: 26px; margin: 0 0 14px; }}
+    .description {{ color: var(--muted); font-size: 20px; line-height: 1.5; max-width: 800px; }}
+    .actions {{ display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }}
+    .button {{ background: var(--ink); border-radius: 999px; color: white; display: inline-block; padding: 10px 16px; text-decoration: none; }}
+    .button.secondary {{ background: transparent; border: 1px solid var(--line); color: var(--ink); }}
+    .summary-grid {{ display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 24px 0; }}
+    .summary-card {{ background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }}
+    .summary-card strong {{ display: block; font-size: 24px; margin-top: 6px; }}
+    .summary-card span {{ color: var(--muted); font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+    th, td {{ border-bottom: 1px solid var(--line); padding: 11px 10px; text-align: left; vertical-align: top; }}
+    th {{ color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }}
+    code, pre {{ background: rgba(17,25,21,0.06); border-radius: 14px; }}
+    code {{ padding: 2px 6px; }}
+    pre {{ max-height: 560px; overflow: auto; padding: 18px; white-space: pre-wrap; }}
+    details {{ margin-top: 22px; }}
+    summary {{ cursor: pointer; font-weight: 900; }}
+    .panel + .panel {{ margin-top: 22px; }}
+    @media (max-width: 760px) {{ main {{ padding: 24px 14px; }} .panel {{ overflow-x: auto; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="crumb"><a href="/">Back to dashboard</a></div>
+    <section class="hero" data-testid="catalog-detail-page">
+      <div class="kicker">Planning catalog</div>
+      <h1>{html.escape(title)}</h1>
+      <p class="description">{html.escape(description)}</p>
+      <div class="actions">
+        <a class="button" href="{html.escape(api_href)}">Open JSON API</a>
+        <a class="button secondary" href="/">Use dashboard controls</a>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Summary</h2>
+      <div class="summary-grid">{summary}</div>
+    </section>
+    {sections}
+    <section class="panel">
+      <details>
+        <summary>Show raw JSON payload</summary>
+        <pre data-testid="catalog-json-preview">{raw_json}</pre>
+      </details>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def _catalog_summary_cards(payload: dict[str, Any]) -> str:
+    cards: list[tuple[str, str]] = []
+    schema = payload.get("schema_version") or payload.get("schema") or payload.get("report_type")
+    if schema:
+        cards.append(("Schema", str(schema)))
+    for key, value in payload.items():
+        if isinstance(value, list):
+            cards.append((key.replace("_", " ").title(), str(len(value))))
+        elif isinstance(value, dict):
+            cards.append((key.replace("_", " ").title(), str(len(value))))
+        elif isinstance(value, (bool, int, float, str)) and len(cards) < 6:
+            cards.append((key.replace("_", " ").title(), str(value)))
+    if not cards:
+        cards.append(("Payload", "available"))
+    return "\n".join(
+        f'<div class="summary-card"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>'
+        for label, value in cards[:8]
+    )
+
+
+def _catalog_detail_sections(payload: dict[str, Any]) -> str:
+    sections: list[str] = []
+    scalar_rows = [
+        (key, value)
+        for key, value in payload.items()
+        if not isinstance(value, (dict, list))
+    ]
+    if scalar_rows:
+        sections.append(_catalog_key_value_section("Overview", scalar_rows))
+    for key, value in payload.items():
+        if isinstance(value, list):
+            sections.append(_catalog_list_section(key, value))
+        elif isinstance(value, dict):
+            nested_scalar_rows = [
+                (nested_key, nested_value)
+                for nested_key, nested_value in value.items()
+                if not isinstance(nested_value, (dict, list))
+            ]
+            if nested_scalar_rows:
+                sections.append(_catalog_key_value_section(key.replace("_", " ").title(), nested_scalar_rows))
+    return "\n".join(sections)
+
+
+def _catalog_key_value_section(title: str, rows: list[tuple[str, Any]]) -> str:
+    body = "\n".join(
+        f"<tr><th>{html.escape(str(key).replace('_', ' ').title())}</th><td>{_catalog_cell(value)}</td></tr>"
+        for key, value in rows[:24]
+    )
+    return f"""
+    <section class="panel">
+      <h2>{html.escape(title)}</h2>
+      <table><tbody>{body}</tbody></table>
+    </section>
+    """
+
+
+def _catalog_list_section(title: str, rows: list[Any]) -> str:
+    if not rows:
+        return f"""
+    <section class="panel">
+      <h2>{html.escape(title.replace('_', ' ').title())}</h2>
+      <p class="description">No entries.</p>
+    </section>
+    """
+    dict_rows = [row for row in rows if isinstance(row, dict)]
+    if not dict_rows:
+        body = "\n".join(f"<tr><td>{_catalog_cell(row)}</td></tr>" for row in rows[:40])
+        return f"""
+    <section class="panel">
+      <h2>{html.escape(title.replace('_', ' ').title())}</h2>
+      <table><tbody>{body}</tbody></table>
+    </section>
+    """
+    columns = _catalog_columns(dict_rows)
+    header = "".join(f"<th>{html.escape(column.replace('_', ' ').title())}</th>" for column in columns)
+    body = "\n".join(
+        "<tr>" + "".join(f"<td>{_catalog_cell(row.get(column))}</td>" for column in columns) + "</tr>"
+        for row in dict_rows[:40]
+    )
+    return f"""
+    <section class="panel">
+      <h2>{html.escape(title.replace('_', ' ').title())}</h2>
+      <table>
+        <thead><tr>{header}</tr></thead>
+        <tbody>{body}</tbody>
+      </table>
+    </section>
+    """
+
+
+def _catalog_columns(rows: list[dict[str, Any]]) -> list[str]:
+    preferred = [
+        "id",
+        "name",
+        "title",
+        "provider",
+        "contract",
+        "suite",
+        "model",
+        "status",
+        "schema_version",
+        "description",
+        "href",
+    ]
+    keys: list[str] = []
+    for key in preferred:
+        if any(key in row for row in rows):
+            keys.append(key)
+    for row in rows:
+        for key, value in row.items():
+            if key not in keys and not isinstance(value, (dict, list)):
+                keys.append(key)
+            if len(keys) >= 7:
+                return keys
+    return keys[:7] or sorted(str(key) for key in rows[0].keys())[:7]
+
+
+def _catalog_cell(value: Any) -> str:
+    if value is None:
+        return '<span class="meta">none</span>'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return html.escape(str(value))
+    if isinstance(value, str):
+        text = value if len(value) <= 220 else value[:217] + "..."
+        return html.escape(text)
+    compact = json.dumps(value, sort_keys=True, default=str)
+    if len(compact) > 220:
+        compact = compact[:217] + "..."
+    return f"<code>{html.escape(compact)}</code>"
+
+
 def dashboard_campaign_preview(query: dict[str, list[str]] | None = None) -> dict[str, Any]:
     query = query or {}
     providers = _query_csv(query, "providers")
@@ -1796,6 +2081,20 @@ def make_dashboard_handler(
                 return
             if parsed.path in {"", "/"}:
                 self._write_html(render_dashboard_html(runs_dir, auth_required=auth_digest is not None))
+                return
+            if parsed.path.startswith("/catalog/"):
+                catalog_id = unquote(parsed.path.removeprefix("/catalog/")).strip("/")
+                try:
+                    self._write_html(
+                        render_dashboard_catalog_html(
+                            catalog_id,
+                            project_root=_dashboard_project_root(runs_dir),
+                            policy=policy,
+                            query=parse_qs(parsed.query, keep_blank_values=True),
+                        )
+                    )
+                except ConfigError as exc:
+                    self._write_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
                 return
             if parsed.path.startswith("/runs/") and "/artifacts/" in parsed.path:
                 try:
@@ -5286,7 +5585,8 @@ def _catalog_panel() -> str:
         surface_count = 0
     links = "\n".join(
         (
-            f'<a class="catalog-card" data-testid="catalog-link" href="{html.escape(item["href"])}">'
+            f'<a class="catalog-card" data-testid="catalog-link" '
+            f'href="/catalog/{html.escape(item["id"])}" data-api-href="{html.escape(item["href"])}">'
             f'<strong>{html.escape(item["id"].replace("-", " ").title())}</strong>'
             f'<span>{html.escape(item["description"])}</span>'
             '</a>'

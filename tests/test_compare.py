@@ -123,14 +123,16 @@ def test_write_comparison_json(tmp_path) -> None:
     write_comparison_json([run_a], output)
 
     payload = json.loads(output.read_text(encoding="utf-8"))
-    assert payload[0]["run_id"] == "run_a"
-    assert "pass_rate" in payload[0]
-    assert "p95_latency_ms" in payload[0]
-    assert "avg_queue_ms" in payload[0]
-    assert "avg_rate_limit_wait_ms" in payload[0]
-    assert "avg_cache_hit_ratio" in payload[0]
-    assert "total_cost_usd" in payload[0]
-    assert payload[0]["scenario_summary"][0]["scenario"] == "smoke"
+    assert payload["schema_version"] == "agentblaster.comparison.v1"
+    assert payload["run_count"] == 1
+    assert payload["rows"][0]["run_id"] == "run_a"
+    assert "pass_rate" in payload["rows"][0]
+    assert "p95_latency_ms" in payload["rows"][0]
+    assert "avg_queue_ms" in payload["rows"][0]
+    assert "avg_rate_limit_wait_ms" in payload["rows"][0]
+    assert "avg_cache_hit_ratio" in payload["rows"][0]
+    assert "total_cost_usd" in payload["rows"][0]
+    assert payload["rows"][0]["scenario_summary"][0]["scenario"] == "smoke"
 
 
 def test_evaluate_comparison_gate_flags_latency_regression(tmp_path) -> None:

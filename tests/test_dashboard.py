@@ -567,6 +567,9 @@ def test_dashboard_html_is_redacted_and_chrome_testable(monkeypatch, tmp_path) -
     assert 'data-testid="provider-auth-api-key-input"' in html
     assert 'data-testid="catalog-panel"' in html
     assert 'data-testid="catalog-link"' in html
+    assert '/catalog/engine-targets' in html
+    assert '/catalog/models' in html
+    assert '/catalog/workflow-surfaces' in html
     assert 'data-testid="review-artifacts-panel"' in html
     assert 'data-testid="review-artifacts-table"' in html
     assert "qwen-gemma-local: model_quality=2" in html
@@ -1058,6 +1061,27 @@ def test_dashboard_review_artifacts_indexes_static_evidence_without_raw_contents
     )
     (reports / "telemetry-audit.json").write_text(
         json.dumps({"schema_version": "agentblaster.telemetry-audit.v1", "summary": {"comparable_core_ok": False}}),
+        encoding="utf-8",
+    )
+    (reports / "comparison.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "agentblaster.comparison.v1",
+                "run_count": 1,
+                "rows": [
+                    {
+                        "run_id": "run_a",
+                        "suite": "smoke",
+                        "provider": "afm",
+                        "model": "qwen",
+                        "total_cases": 1,
+                        "passed": 1,
+                        "failed": 0,
+                        "pass_rate": 100.0,
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     (reports / "provider-normalized-telemetry.json").write_text(
@@ -1779,6 +1803,8 @@ def test_dashboard_review_artifacts_indexes_static_evidence_without_raw_contents
     assert artifacts["reports/claim-readiness.json"]["status"] == "pass"
     assert artifacts["reports/claim-readiness.json"]["href"] == "/api/review-artifacts/reports%2Fclaim-readiness.json"
     assert artifacts["reports/telemetry-audit.json"]["status"] == "review"
+    assert artifacts["reports/comparison.json"]["status"] == "informational"
+    assert artifacts["reports/comparison.json"]["schema"] == "agentblaster.comparison.v1"
     assert artifacts["reports/provider-normalized-telemetry.json"]["status"] == "review"
     assert artifacts["reports/provider-normalized-telemetry.json"]["normalized_telemetry_summaries"][0][
         "stats_profile"
@@ -2507,6 +2533,7 @@ def test_dashboard_http_handler_serves_planning_catalog_apis(tmp_path) -> None:
         setup_status = httpx.get(f"{base_url}/api/setup-status", timeout=2.0)
         run_plan_endpoint = httpx.get(f"{base_url}/api/run-plan", timeout=2.0)
         campaign = httpx.get(f"{base_url}/api/campaign-preview?providers=afm&targets=qwen3.6-27b-dense&suites=smoke,lcp-context", timeout=2.0)
+        models_page = httpx.get(f"{base_url}/catalog/models", timeout=2.0)
 
         assert catalogs.status_code == 200
         assert any(item["href"] == "/api/engine-targets" for item in catalogs.json()["catalogs"])
@@ -2521,6 +2548,11 @@ def test_dashboard_http_handler_serves_planning_catalog_apis(tmp_path) -> None:
         assert run_plan_endpoint.json()["method"] == "POST"
         assert campaign.json()["schema_version"] == "agentblaster.campaign-preview.v1"
         assert campaign.json()["matrix_run_count"] == 2
+        assert models_page.status_code == 200
+        assert models_page.headers["content-type"].startswith("text/html")
+        assert "AgentBlaster Catalog - Models" in models_page.text
+        assert "Open JSON API" in models_page.text
+        assert "/api/models" in models_page.text
     finally:
         server.shutdown()
         server.server_close()
