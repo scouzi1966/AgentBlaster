@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from agentblaster.adapters import ProviderAdapter, adapter_for
+from agentblaster.constants import SMOKE_SENTINEL, SMOKE_SENTINEL_MAX_TOKENS, SMOKE_SENTINEL_PROMPT, SMOKE_SENTINEL_SYSTEM_PROMPT
 from agentblaster.config import ProviderStore
 from agentblaster.errors import AdapterError, ConfigError
 from agentblaster.matrix import MatrixRun, load_matrix_file
@@ -725,9 +726,10 @@ def _exact_case() -> BenchmarkCase:
     return BenchmarkCase(
         id="contract-exact-chat",
         title="Contract exact chat",
-        prompt="Reply with exactly: agentblaster-ok",
-        expected_substring="agentblaster-ok",
-        max_tokens=16,
+        system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+        prompt=SMOKE_SENTINEL_PROMPT,
+        expected_substring=SMOKE_SENTINEL,
+        max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         timeout_seconds=10.0,
     )
 
@@ -736,10 +738,11 @@ def _streaming_case() -> BenchmarkCase:
     return BenchmarkCase(
         id="contract-streaming-text",
         title="Contract streaming text",
-        prompt="Reply with exactly: agentblaster-ok",
-        expected_substring="agentblaster-ok",
+        system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+        prompt=SMOKE_SENTINEL_PROMPT,
+        expected_substring=SMOKE_SENTINEL,
         streaming=True,
-        max_tokens=16,
+        max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         timeout_seconds=10.0,
     )
 
@@ -788,9 +791,10 @@ def _responses_state_seed_case() -> BenchmarkCase:
     return BenchmarkCase(
         id="contract-responses-state-seed",
         title="Responses state seed",
-        prompt="Reply with exactly: agentblaster-ok",
-        expected_substring="agentblaster-ok",
-        max_tokens=16,
+        system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+        prompt=SMOKE_SENTINEL_PROMPT,
+        expected_substring=SMOKE_SENTINEL,
+        max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         timeout_seconds=10.0,
     )
 
@@ -799,11 +803,12 @@ def _responses_stateful_case(previous_response_id: str) -> BenchmarkCase:
     return BenchmarkCase(
         id="contract-responses-stateful",
         title="Responses stateful continuation",
-        prompt="Reply with exactly: agentblaster-ok",
-        expected_substring="agentblaster-ok",
+        system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+        prompt=SMOKE_SENTINEL_PROMPT,
+        expected_substring=SMOKE_SENTINEL,
         previous_response_id=previous_response_id,
         max_tool_calls=1,
-        max_tokens=16,
+        max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         timeout_seconds=10.0,
     )
 

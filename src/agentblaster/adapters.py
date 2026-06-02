@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from agentblaster.constants import SMOKE_SENTINEL, SMOKE_SENTINEL_MAX_TOKENS, SMOKE_SENTINEL_PROMPT, SMOKE_SENTINEL_SYSTEM_PROMPT
 from agentblaster.errors import AdapterError
 from agentblaster.models import AdapterResponse, ApiContract, BenchmarkCase, ProbeResult, ProviderConfig, ToolCallRecord
 from agentblaster.redaction import redact_value
@@ -51,9 +52,10 @@ class ProviderAdapter:
         case = BenchmarkCase(
             id="protocol-smoke-chat",
             title="Protocol smoke chat",
-            prompt="Reply with exactly: agentblaster-ok",
-            expected_substring="agentblaster-ok",
-            max_tokens=16,
+            system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+            prompt=SMOKE_SENTINEL_PROMPT,
+            expected_substring=SMOKE_SENTINEL,
+            max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         )
         return self.chat_completion(model, case)
 

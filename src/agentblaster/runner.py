@@ -10,6 +10,7 @@ from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 from agentblaster.adapters import ProviderAdapter, adapter_for
+from agentblaster.constants import SMOKE_SENTINEL, SMOKE_SENTINEL_MAX_TOKENS, SMOKE_SENTINEL_PROMPT, SMOKE_SENTINEL_SYSTEM_PROMPT
 from agentblaster.costs import estimate_costs
 from agentblaster.engine_targets import compact_engine_target_for_provider, get_engine_target
 from agentblaster.environment import capture_environment
@@ -437,9 +438,10 @@ class SmokeRunner:
         case = BenchmarkCase(
             id=SMOKE_CASE_ID,
             title="Protocol smoke chat",
-            prompt="Reply with exactly: agentblaster-ok",
-            expected_substring="agentblaster-ok",
-            max_tokens=16,
+            system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+            prompt=SMOKE_SENTINEL_PROMPT,
+            expected_substring=SMOKE_SENTINEL,
+            max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         )
         suite = SuiteDefinition(name="smoke", description="Protocol smoke chat.", cases=[case])
         provider_metadata = provider_run_metadata(self.provider, self.adapter)
@@ -545,8 +547,10 @@ class SmokeRunner:
         case = BenchmarkCase(
             id=SMOKE_CASE_ID,
             title="Protocol smoke chat",
-            prompt="Reply with exactly: agentblaster-ok",
-            expected_substring="agentblaster-ok",
+            system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+            prompt=SMOKE_SENTINEL_PROMPT,
+            expected_substring=SMOKE_SENTINEL,
+            max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
         )
         return result_from_response(
             run_id=run_id,

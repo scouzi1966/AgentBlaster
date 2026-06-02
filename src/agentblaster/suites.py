@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from agentblaster.constants import SMOKE_SENTINEL, SMOKE_SENTINEL_MAX_TOKENS, SMOKE_SENTINEL_PROMPT, SMOKE_SENTINEL_SYSTEM_PROMPT
 from agentblaster.errors import ConfigError
 from agentblaster.models import BenchmarkCase, SuiteDefinition, SuiteProvenance
 
@@ -28,9 +29,10 @@ SMOKE_SUITE = SuiteDefinition(
             id="protocol-smoke-chat",
             title="Chat completion returns expected text",
             scenario="protocol smoke",
-            prompt="Reply with exactly: agentblaster-ok",
-            expected_substring="agentblaster-ok",
-            max_tokens=16,
+            system_prompt=SMOKE_SENTINEL_SYSTEM_PROMPT,
+            prompt=SMOKE_SENTINEL_PROMPT,
+            expected_substring=SMOKE_SENTINEL,
+            max_tokens=SMOKE_SENTINEL_MAX_TOKENS,
             tags=["protocol", "chat"],
         )
     ],

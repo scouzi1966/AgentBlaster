@@ -13,6 +13,7 @@ from agentblaster.adapters import (
     extract_openai_tool_names,
     httpx_verify_config,
 )
+from agentblaster.constants import SMOKE_SENTINEL_MAX_TOKENS, SMOKE_SENTINEL_PROMPT, SMOKE_SENTINEL_SYSTEM_PROMPT
 from agentblaster.models import ApiContract, BenchmarkCase, ProviderConfig, SecretRef
 from agentblaster.secrets import EnvironmentSecretStore, SecretResolver
 
@@ -873,8 +874,9 @@ def test_ollama_native_chat_posts_api_chat_and_extracts_metrics() -> None:
         assert str(request.url) == "http://example.com/api/chat"
         payload = json_loads_request(request)
         assert payload["stream"] is False
-        assert payload["options"]["num_predict"] == 16
-        assert payload["messages"][0]["content"] == "Reply with exactly: agentblaster-ok"
+        assert payload["options"]["num_predict"] == SMOKE_SENTINEL_MAX_TOKENS
+        assert payload["messages"][0]["content"] == SMOKE_SENTINEL_SYSTEM_PROMPT
+        assert payload["messages"][1]["content"] == SMOKE_SENTINEL_PROMPT
         return httpx.Response(
             200,
             json={
