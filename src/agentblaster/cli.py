@@ -6,7 +6,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 
@@ -287,9 +287,9 @@ def version() -> None:
 
 @app.command()
 def doctor(
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for static environment readiness.")] = None,
-    home: Annotated[Path | None, typer.Option(help="Optional AgentBlaster config home to report instead of the default.")] = None,
-    policy: Annotated[Path | None, typer.Option(help="Optional security policy path to summarize as redacted readiness controls.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for static environment readiness.")] = None,
+    home: Annotated[Optional[Path], typer.Option(help="Optional AgentBlaster config home to report instead of the default.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional security policy path to summarize as redacted readiness controls.")] = None,
     fail_on_required_gaps: Annotated[
         bool,
         typer.Option("--fail-on-required-gaps/--no-fail-on-required-gaps", help="Exit non-zero if required runtime readiness checks fail."),
@@ -316,7 +316,7 @@ def doctor(
 @app.command("implementation-status")
 def implementation_status_command(
     project_root: Annotated[Path, typer.Option(help="Project root to inspect for static implementation evidence.")] = Path("."),
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the implementation status artifact.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the implementation status artifact.")] = None,
 ) -> None:
     """Report static implementation coverage without running tests or contacting providers."""
     if output_json is not None:
@@ -338,9 +338,9 @@ def selftest(
     ctx: typer.Context,
     tier: Annotated[str, typer.Option(help="App-test tier to run.")] = "normal",
     dry_run: Annotated[bool, typer.Option(help="Print the planned test command without executing it.")] = False,
-    report_dir: Annotated[Path | None, typer.Option(help="Optional directory for selftest execution metadata.")] = None,
-    junit_xml: Annotated[Path | None, typer.Option(help="Optional pytest JUnit XML output path.")] = None,
-    run_id: Annotated[str | None, typer.Option(help="Optional stable selftest run id for deterministic release evidence paths.")] = None,
+    report_dir: Annotated[Optional[Path], typer.Option(help="Optional directory for selftest execution metadata.")] = None,
+    junit_xml: Annotated[Optional[Path], typer.Option(help="Optional pytest JUnit XML output path.")] = None,
+    run_id: Annotated[Optional[str], typer.Option(help="Optional stable selftest run id for deterministic release evidence paths.")] = None,
 ) -> None:
     """Run AgentBlaster's own SDLC test harness."""
     if ctx.invoked_subcommand is not None:
@@ -360,9 +360,9 @@ def selftest_gui(
     browser: Annotated[str, typer.Option(help="Browser target for GUI tests: chromium, chrome, or firefox.")] = "chromium",
     headed: Annotated[bool, typer.Option(help="Run browser tests headed when supported by the GUI harness.")] = False,
     dry_run: Annotated[bool, typer.Option(help="Print the planned GUI test command without executing it.")] = False,
-    report_dir: Annotated[Path | None, typer.Option(help="Optional directory for selftest execution metadata.")] = None,
-    junit_xml: Annotated[Path | None, typer.Option(help="Optional pytest JUnit XML output path.")] = None,
-    run_id: Annotated[str | None, typer.Option(help="Optional stable selftest run id for deterministic release evidence paths.")] = None,
+    report_dir: Annotated[Optional[Path], typer.Option(help="Optional directory for selftest execution metadata.")] = None,
+    junit_xml: Annotated[Optional[Path], typer.Option(help="Optional pytest JUnit XML output path.")] = None,
+    run_id: Annotated[Optional[str], typer.Option(help="Optional stable selftest run id for deterministic release evidence paths.")] = None,
 ) -> None:
     """Run or plan dashboard GUI tests."""
     command = build_selftest_command(
@@ -416,16 +416,16 @@ def mock_provider(
 @engines_app.command("improvement-plan")
 def engines_improvement_plan(
     engine: Annotated[str, typer.Option(help="Engine/provider name to generate improvement priorities for.")] = "afm",
-    pressure_audit: Annotated[list[Path] | None, typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
-    matrix_saturation_report: Annotated[list[Path] | None, typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
-    provider_contract_check: Annotated[list[Path] | None, typer.Option(help="Provider contract-check JSON artifact. Can be repeated.")] = None,
-    provider_contract_matrix: Annotated[list[Path] | None, typer.Option(help="Provider contract-check matrix JSON artifact. Can be repeated.")] = None,
-    telemetry_audit: Annotated[list[Path] | None, typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
-    metric_coverage: Annotated[list[Path] | None, typer.Option(help="Metric coverage JSON artifact. Can be repeated.")] = None,
-    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
-    comparison_gate: Annotated[list[Path] | None, typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
-    harness_review: Annotated[list[Path] | None, typer.Option(help="Harness review JSON artifact for generated suites. Can be repeated.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional engine improvement advisory JSON output path.")] = None,
+    pressure_audit: Annotated[Optional[list[Path]], typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    matrix_saturation_report: Annotated[Optional[list[Path]], typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
+    provider_contract_check: Annotated[Optional[list[Path]], typer.Option(help="Provider contract-check JSON artifact. Can be repeated.")] = None,
+    provider_contract_matrix: Annotated[Optional[list[Path]], typer.Option(help="Provider contract-check matrix JSON artifact. Can be repeated.")] = None,
+    telemetry_audit: Annotated[Optional[list[Path]], typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
+    metric_coverage: Annotated[Optional[list[Path]], typer.Option(help="Metric coverage JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[Optional[list[Path]], typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    comparison_gate: Annotated[Optional[list[Path]], typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[Optional[list[Path]], typer.Option(help="Harness review JSON artifact for generated suites. Can be repeated.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional engine improvement advisory JSON output path.")] = None,
 ) -> None:
     """Create a no-dispatch engine improvement plan from benchmark evidence artifacts."""
     try:
@@ -450,30 +450,27 @@ def engines_improvement_plan(
 
 @evidence_app.command("campaign-preflight")
 def campaign_preflight_bundle_command(
-    matrix: Annotated[
-        list[Path] | None,
+    matrix: Annotated[Optional[list[Path]],
         typer.Option("--matrix", help="Matrix file to inventory. Repeat for multi-matrix campaigns."),
     ] = None,
     output_dir: Annotated[Path, typer.Option(help="Directory where the preflight bundle folder is written.")] = Path("campaign-preflight"),
-    policy: Annotated[Path | None, typer.Option(help="Optional reviewed policy file to include and normalize.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional reviewed policy file to include and normalize.")] = None,
     project_root: Annotated[Path, typer.Option(help="Project root for implementation and packaging readiness.")] = Path("."),
-    home: Annotated[Path | None, typer.Option(help="Optional AgentBlaster config home to report in environment readiness.")] = None,
+    home: Annotated[Optional[Path], typer.Option(help="Optional AgentBlaster config home to report in environment readiness.")] = None,
     include_provider_audit: Annotated[
         bool,
         typer.Option("--include-provider-audit/--no-provider-audit", help="Include redacted provider inventory and policy audit."),
     ] = True,
-    benchmark_readiness: Annotated[
-        list[Path] | None,
+    benchmark_readiness: Annotated[Optional[list[Path]],
         typer.Option("--benchmark-readiness", help="Benchmark readiness dossier JSON artifact to summarize. Can be repeated."),
     ] = None,
-    benchmark_readiness_list: Annotated[
-        list[Path] | None,
+    benchmark_readiness_list: Annotated[Optional[list[Path]],
         typer.Option(
             "--benchmark-readiness-list",
             help="Text file with one benchmark readiness dossier JSON path per line. Can be repeated.",
         ),
     ] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path.")] = None,
 ) -> None:
     """Create a no-dispatch campaign readiness folder before executing matrices."""
     if not matrix:
@@ -512,7 +509,7 @@ def campaign_preflight_bundle_command(
     typer.echo(format_campaign_preflight_bundle(bundle), nl=False)
 
 
-def _benchmark_readiness_paths(paths: list[Path] | None, list_files: list[Path] | None) -> list[Path] | None:
+def _benchmark_readiness_paths(paths: Optional[list[Path]], list_files: Optional[list[Path]]) -> list[Path] | None:
     resolved = list(paths or [])
     for list_file in list_files or []:
         list_file = list_file.expanduser()
@@ -543,33 +540,31 @@ def _benchmark_readiness_paths(paths: list[Path] | None, list_files: list[Path] 
 
 @app.command()
 def run(
-    engine: Annotated[str | None, typer.Option(help="Configured provider/engine profile name.")] = None,
-    model: Annotated[str | None, typer.Option(help="Model id. Required unless provider has a default model.")] = None,
+    engine: Annotated[Optional[str], typer.Option(help="Configured provider/engine profile name.")] = None,
+    model: Annotated[Optional[str], typer.Option(help="Model id. Required unless provider has a default model.")] = None,
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to run.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to run.")] = None,
-    matrix: Annotated[Path | None, typer.Option(help="YAML matrix file containing multiple runs.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to run.")] = None,
+    matrix: Annotated[Optional[Path], typer.Option(help="YAML matrix file containing multiple runs.")] = None,
     output_dir: Annotated[Path, typer.Option(help="Directory where run artifacts are written.")] = Path("runs"),
-    policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path.")] = None,
     offline: Annotated[bool, typer.Option(help="Block providers marked as remote.")] = False,
     concurrency: Annotated[int, typer.Option(help="Maximum concurrent benchmark cases.")] = 1,
-    model_revision: Annotated[str | None, typer.Option(help="Model revision/hash metadata.")] = None,
-    model_architecture: Annotated[str | None, typer.Option(help="Model architecture metadata.")] = None,
-    quantization: Annotated[str | None, typer.Option(help="Model quantization metadata.")] = None,
-    tokenizer: Annotated[str | None, typer.Option(help="Tokenizer metadata.")] = None,
-    chat_template: Annotated[str | None, typer.Option(help="Chat template metadata.")] = None,
-    context_length: Annotated[int | None, typer.Option(help="Context length metadata.")] = None,
+    model_revision: Annotated[Optional[str], typer.Option(help="Model revision/hash metadata.")] = None,
+    model_architecture: Annotated[Optional[str], typer.Option(help="Model architecture metadata.")] = None,
+    quantization: Annotated[Optional[str], typer.Option(help="Model quantization metadata.")] = None,
+    tokenizer: Annotated[Optional[str], typer.Option(help="Tokenizer metadata.")] = None,
+    chat_template: Annotated[Optional[str], typer.Option(help="Chat template metadata.")] = None,
+    context_length: Annotated[Optional[int], typer.Option(help="Context length metadata.")] = None,
     retention_classification: Annotated[
         str,
         typer.Option(help="Run artifact classification: public, internal, confidential, or restricted."),
     ] = "internal",
-    retention_days: Annotated[int | None, typer.Option(help="Optional number of days to retain the run artifact directory.")] = None,
-    raw_trace_retention_days: Annotated[
-        int | None,
+    retention_days: Annotated[Optional[int], typer.Option(help="Optional number of days to retain the run artifact directory.")] = None,
+    raw_trace_retention_days: Annotated[Optional[int],
         typer.Option(help="Optional number of days to retain raw trace artifacts."),
     ] = None,
-    retention_note: Annotated[
-        list[str] | None,
+    retention_note: Annotated[Optional[list[str]],
         typer.Option(help="Optional retention/governance note. Can be repeated."),
     ] = None,
     raw_traces: Annotated[
@@ -586,8 +581,8 @@ def run(
         typer.Option(help="Treat unknown required provider capabilities as a preflight failure."),
     ] = False,
     dry_run: Annotated[bool, typer.Option(help="Plan the run without dispatching provider requests or writing run artifacts.")] = False,
-    plan_json: Annotated[Path | None, typer.Option(help="Optional JSON path for dry-run plan output.")] = None,
-    matrix_summary_json: Annotated[Path | None, typer.Option(help="Optional JSON path for executed matrix summary output.")] = None,
+    plan_json: Annotated[Optional[Path], typer.Option(help="Optional JSON path for dry-run plan output.")] = None,
+    matrix_summary_json: Annotated[Optional[Path], typer.Option(help="Optional JSON path for executed matrix summary output.")] = None,
     continue_on_error: Annotated[
         bool,
         typer.Option(help="Continue matrix execution after an entry fails and record a partial summary."),
@@ -670,12 +665,12 @@ def _run_matrix(
     *,
     matrix: Path,
     output_dir: Path,
-    policy: Path | None,
-    audit_log: Path | None,
+    policy: Optional[Path],
+    audit_log: Optional[Path],
     offline: bool,
     dry_run: bool = False,
-    plan_json: Path | None = None,
-    matrix_summary_json: Path | None = None,
+    plan_json: Optional[Path] = None,
+    matrix_summary_json: Optional[Path] = None,
     continue_on_error: bool = False,
     retention_policy: RetentionPolicy | None = None,
     capability_preflight: bool = True,
@@ -912,12 +907,12 @@ def _write_matrix_summary_json(
 def _run_one(
     *,
     engine: str,
-    model: str | None,
+    model: Optional[str],
     suite: str,
-    suite_file: Path | None,
+    suite_file: Optional[Path],
     output_dir: Path,
-    policy: Path | None,
-    audit_log: Path | None,
+    policy: Optional[Path],
+    audit_log: Optional[Path],
     offline: bool,
     concurrency: int,
     trace_mode: RawTraceMode,
@@ -1038,12 +1033,12 @@ def _print_summary(summary) -> None:
 
 def _model_metadata_from_options(
     *,
-    revision: str | None = None,
-    architecture: str | None = None,
-    quantization: str | None = None,
-    tokenizer: str | None = None,
-    chat_template: str | None = None,
-    context_length: int | None = None,
+    revision: Optional[str] = None,
+    architecture: Optional[str] = None,
+    quantization: Optional[str] = None,
+    tokenizer: Optional[str] = None,
+    chat_template: Optional[str] = None,
+    context_length: Optional[int] = None,
 ) -> ModelMetadata | None:
     metadata = ModelMetadata(
         revision=revision,
@@ -1059,9 +1054,9 @@ def _model_metadata_from_options(
 def _retention_policy_from_options(
     *,
     classification: str,
-    retain_days: int | None,
-    raw_trace_retain_days: int | None,
-    notes: list[str] | None,
+    retain_days: Optional[int],
+    raw_trace_retain_days: Optional[int],
+    notes: Optional[list[str]],
 ) -> RetentionPolicy:
     try:
         return RetentionPolicy(
@@ -1108,7 +1103,7 @@ def _set_provider_capability(provider_name: str, capability: str, value: bool) -
 @security_app.command("scan")
 def security_scan(
     paths: Annotated[list[Path], typer.Argument(help="Files, directories, or zip artifacts to scan.")],
-    output_json: Annotated[Path | None, typer.Option(help="Optional redaction scan JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional redaction scan JSON output path.")] = None,
     fail_on_findings: Annotated[
         bool,
         typer.Option("--fail-on-findings/--no-fail-on-findings", help="Exit non-zero when findings are detected."),
@@ -1132,7 +1127,7 @@ def security_scan(
 @policy_app.command("validate")
 def policy_validate(
     path: Annotated[Path, typer.Argument(help="Policy YAML file to validate and normalize.")],
-    output_json: Annotated[Path | None, typer.Option(help="Optional normalized policy JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional normalized policy JSON output path.")] = None,
 ) -> None:
     """Validate an enterprise policy file without running benchmarks."""
     try:
@@ -1151,9 +1146,9 @@ def policy_validate(
 
 @policy_app.command("template")
 def policy_template(
-    output: Annotated[Path | None, typer.Option(help="Optional YAML output path for the enterprise policy template.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional YAML output path for the enterprise policy template.")] = None,
     profile: Annotated[str, typer.Option(help="Template profile: local or remote-gateway.")] = "local",
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path with template metadata.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path with template metadata.")] = None,
 ) -> None:
     """Generate a strict enterprise policy template without reading secrets or contacting providers."""
     if profile not in {"local", "remote-gateway"}:
@@ -1176,7 +1171,7 @@ def policy_template(
 def policy_controls(
     path: Annotated[Path, typer.Argument(help="Policy YAML file to summarize.")],
     name: Annotated[str, typer.Option(help="Review name for the policy summary.")] = "policy",
-    output_json: Annotated[Path | None, typer.Option(help="Optional policy-control summary JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional policy-control summary JSON output path.")] = None,
 ) -> None:
     """Summarize enterprise policy controls without resolving secrets or dispatching providers."""
     try:
@@ -1217,8 +1212,8 @@ def validate_case(path: Annotated[Path, typer.Argument(help="YAML benchmark case
 @app.command("suite-footprint")
 def suite_footprint_command(
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to analyze.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to analyze.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to analyze.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
 ) -> None:
     """Analyze suite prompt, tool, MCP, and skill footprint without provider dispatch."""
     try:
@@ -1234,7 +1229,7 @@ def suite_footprint_command(
 @app.command("suite-requirements")
 def suite_requirements_command(
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to inspect.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to inspect.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to inspect.")] = None,
 ) -> None:
     """Show provider capabilities required by a suite."""
     try:
@@ -1249,8 +1244,8 @@ def suite_requirements_command(
 @app.command("suite-audit")
 def suite_audit_command(
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to audit.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to audit.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to audit.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
 ) -> None:
     """Audit suite provenance, risk, and capability surfaces without dispatching providers."""
     try:
@@ -1269,10 +1264,10 @@ def suite_audit_command(
 @app.command("suite-calibration")
 def suite_calibration_command(
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to calibrate.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to calibrate.")] = None,
-    calibration: Annotated[Path | None, typer.Option(help="Calibration manifest JSON to evaluate.")] = None,
-    template_output: Annotated[Path | None, typer.Option(help="Write a calibration manifest template instead of evaluating.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the calibration report.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to calibrate.")] = None,
+    calibration: Annotated[Optional[Path], typer.Option(help="Calibration manifest JSON to evaluate.")] = None,
+    template_output: Annotated[Optional[Path], typer.Option(help="Write a calibration manifest template instead of evaluating.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the calibration report.")] = None,
     no_release_gate: Annotated[bool, typer.Option(help="Do not require approved_for_release_gate=true.")] = False,
 ) -> None:
     """Template or evaluate generated-suite calibration evidence."""
@@ -1307,7 +1302,7 @@ def report(
         str,
         typer.Option(help="Comma-separated formats: html,md,json,publication,card,png,pdf."),
     ] = "html,json",
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for report export events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for report export events.")] = None,
 ) -> None:
     """Generate reports from a completed run directory."""
     formats = [item.strip() for item in format.split(",")]
@@ -1336,7 +1331,7 @@ def agents_profiles() -> None:
 @agents_app.command("suite")
 def agents_suite(
     profile: Annotated[str, typer.Option(help="Agent profile id: opencode, openclaw, hermes, pi, or all.")] = "all",
-    output: Annotated[Path | None, typer.Option(help="Optional output YAML path for the generated suite.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output YAML path for the generated suite.")] = None,
 ) -> None:
     """Generate a deterministic representative local-agent workflow suite."""
     include_all = profile == "all"
@@ -1360,7 +1355,7 @@ def models_stress_matrix(
     suites: Annotated[str, typer.Option(help="Comma-separated built-in suite names to stress.")] = "agentic-tool-loop,agent-fanout,prefill,harness-engineering,trace-replay",
     concurrency_levels: Annotated[str, typer.Option(help="Comma-separated concurrency levels, for example 1,2,4,8.")] = "1,2,4,8",
     output: Annotated[Path, typer.Option(help="Output matrix YAML path.")] = Path("examples/matrices/stress-qwen-gemma.yaml"),
-    summary_json: Annotated[Path | None, typer.Option(help="Optional JSON summary path for the generated matrix.")] = None,
+    summary_json: Annotated[Optional[Path], typer.Option(help="Optional JSON summary path for the generated matrix.")] = None,
     strict_unknown_capabilities: Annotated[bool, typer.Option(help="Set strict_unknown_capabilities on generated runs.")] = False,
 ) -> None:
     """Generate a provider x model x suite x concurrency stress matrix."""
@@ -1393,8 +1388,8 @@ def models_campaign_plan(
     targets: Annotated[str, typer.Option(help="Comma-separated model target ids for the campaign.")] = "qwen3.6-27b-dense,gemma-4-31b-dense",
     suites: Annotated[str, typer.Option(help="Comma-separated built-in suite names for the campaign.")] = "smoke,structured,toolcall,toolsim,trace-replay,agent-fanout,prefill,cache-control,cancellation,lcp-context",
     concurrency: Annotated[int, typer.Option(help="Matrix concurrency per run.")] = 1,
-    policy: Annotated[Path | None, typer.Option(help="Optional policy path referenced by generated commands.")] = None,
-    name: Annotated[str | None, typer.Option(help="Optional campaign and matrix name.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional policy path referenced by generated commands.")] = None,
+    name: Annotated[Optional[str], typer.Option(help="Optional campaign and matrix name.")] = None,
     overwrite: Annotated[bool, typer.Option(help="Replace known campaign artifacts if the output directory already exists.")] = False,
 ) -> None:
     """Create a no-network multi-suite Qwen/Gemma benchmark campaign plan."""
@@ -1424,8 +1419,8 @@ def models_benchmark_kit(
     targets: Annotated[str, typer.Option(help="Comma-separated model target ids for the kit.")] = "qwen3.6-27b-dense,gemma-4-31b-dense",
     suite: Annotated[str, typer.Option(help="Built-in suite name for the matrix and readiness commands.")] = "trace-replay",
     concurrency: Annotated[int, typer.Option(help="Matrix concurrency per run.")] = 1,
-    policy: Annotated[Path | None, typer.Option(help="Optional policy path to include in readiness commands.")] = None,
-    name: Annotated[str | None, typer.Option(help="Optional kit and matrix name.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional policy path to include in readiness commands.")] = None,
+    name: Annotated[Optional[str], typer.Option(help="Optional kit and matrix name.")] = None,
     overwrite: Annotated[bool, typer.Option(help="Replace known kit artifacts if the output directory already exists.")] = False,
 ) -> None:
     """Create a no-network benchmark kit for model/provider comparison campaigns."""
@@ -1456,8 +1451,8 @@ def matrix_report(
         str,
         typer.Option(help="Comma-separated formats: html,md,json,pdf."),
     ] = "html,md,json",
-    output_dir: Annotated[Path | None, typer.Option(help="Optional directory where matrix reports are written.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix report export events.")] = None,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Optional directory where matrix reports are written.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for matrix report export events.")] = None,
 ) -> None:
     """Generate reports from an executed matrix summary artifact."""
     formats = [item.strip() for item in format.split(",")]
@@ -1479,7 +1474,7 @@ def matrix_report(
 @matrix_app.command("pressure-audit")
 def matrix_pressure_audit(
     matrix: Annotated[Path, typer.Argument(help="Matrix YAML file to inspect without dispatch.")],
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the pressure audit.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the pressure audit.")] = None,
 ) -> None:
     """Audit matrix-level prompt, prefill, static-prefix, and concurrency pressure."""
     try:
@@ -1501,8 +1496,8 @@ def matrix_contract_checks(
     skip_tools: Annotated[bool, typer.Option(help="Skip tool-call contract checks.")] = False,
     timeout: Annotated[float, typer.Option(help="Per-request timeout in seconds when executing checks.")] = 10.0,
     fail_fast: Annotated[bool, typer.Option(help="Stop on the first provider/model target error.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the contract-check matrix report.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix contract-check events.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the contract-check matrix report.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for matrix contract-check events.")] = None,
 ) -> None:
     """Plan or execute standardized provider contract checks for every unique matrix target."""
     try:
@@ -1543,8 +1538,8 @@ def matrix_scorecard(
         str,
         typer.Option(help="Comma-separated formats: html,md,json,card,png,pdf."),
     ] = "html,md,json",
-    output_dir: Annotated[Path | None, typer.Option(help="Optional directory where matrix scorecards are written.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix scorecard export events.")] = None,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Optional directory where matrix scorecards are written.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for matrix scorecard export events.")] = None,
 ) -> None:
     """Generate publication-oriented leaderboard scorecards from an executed matrix."""
     formats = [item.strip() for item in format.split(",")]
@@ -1566,9 +1561,9 @@ def matrix_scorecard(
 @matrix_app.command("publication-bundle")
 def matrix_publication_bundle(
     summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
-    report_dir: Annotated[Path | None, typer.Option(help="Directory containing matrix report and scorecard artifacts. Defaults to summary JSON directory.")] = None,
-    output_dir: Annotated[Path | None, typer.Option(help="Directory for the matrix publication bundle.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix publication bundle events.")] = None,
+    report_dir: Annotated[Optional[Path], typer.Option(help="Directory containing matrix report and scorecard artifacts. Defaults to summary JSON directory.")] = None,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Directory for the matrix publication bundle.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for matrix publication bundle events.")] = None,
 ) -> None:
     """Create a shareable bundle containing only redacted matrix publication artifacts."""
     try:
@@ -1588,7 +1583,7 @@ def matrix_publication_bundle(
 @matrix_app.command("saturation-report")
 def matrix_saturation_report(
     summary_json: Annotated[Path, typer.Argument(help="Matrix execution summary JSON produced by --matrix-summary-json.")],
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the saturation report.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the saturation report.")] = None,
     max_latency_regression_pct: Annotated[
         float,
         typer.Option(help="Warn when average or p95 latency increases by more than this percentage from the lowest concurrency baseline."),
@@ -1605,7 +1600,7 @@ def matrix_saturation_report(
         float,
         typer.Option(help="Warn when queue or rate-limit wait reaches this average milliseconds threshold."),
     ] = 50.0,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for matrix saturation report events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for matrix saturation report events.")] = None,
 ) -> None:
     """Analyze executed matrix results for concurrency saturation and queueing regressions."""
     try:
@@ -1640,13 +1635,12 @@ def matrix_gate(
         bool,
         typer.Option(help="Fail unless completed_runs equals total_runs."),
     ] = False,
-    max_failed_runs: Annotated[int | None, typer.Option(help="Maximum allowed failed matrix entries.")] = None,
-    min_completed_runs: Annotated[int | None, typer.Option(help="Minimum required completed matrix entries.")] = None,
-    min_attempted_runs: Annotated[int | None, typer.Option(help="Minimum required attempted matrix entries.")] = None,
-    min_case_pass_rate: Annotated[float | None, typer.Option(help="Minimum aggregate case pass rate percentage.")] = None,
-    max_failed_cases: Annotated[int | None, typer.Option(help="Maximum allowed failed benchmark cases across the matrix.")] = None,
-    max_failure_class: Annotated[
-        list[str] | None,
+    max_failed_runs: Annotated[Optional[int], typer.Option(help="Maximum allowed failed matrix entries.")] = None,
+    min_completed_runs: Annotated[Optional[int], typer.Option(help="Minimum required completed matrix entries.")] = None,
+    min_attempted_runs: Annotated[Optional[int], typer.Option(help="Minimum required attempted matrix entries.")] = None,
+    min_case_pass_rate: Annotated[Optional[float], typer.Option(help="Minimum aggregate case pass rate percentage.")] = None,
+    max_failed_cases: Annotated[Optional[int], typer.Option(help="Maximum allowed failed benchmark cases across the matrix.")] = None,
+    max_failure_class: Annotated[Optional[list[str]],
         typer.Option(
             help=(
                 "Maximum allowed failures for a failure class, formatted as class=count. "
@@ -1663,8 +1657,7 @@ def matrix_gate(
             )
         ),
     ] = False,
-    max_tool_loop_stop_reason: Annotated[
-        list[str] | None,
+    max_tool_loop_stop_reason: Annotated[Optional[list[str]],
         typer.Option(
             help=(
                 "Maximum allowed tool-loop stop reason count, formatted as reason=count. "
@@ -1681,8 +1674,7 @@ def matrix_gate(
             )
         ),
     ] = False,
-    min_judge_verdict_valid_rate: Annotated[
-        float | None,
+    min_judge_verdict_valid_rate: Annotated[Optional[float],
         typer.Option(help="Minimum valid judge-rubric verdict rate percentage across referenced normalized results."),
     ] = None,
     include_judge_verdict_summary: Annotated[
@@ -1694,12 +1686,10 @@ def matrix_gate(
             )
         ),
     ] = False,
-    max_invalid_tool_calls: Annotated[
-        int | None,
+    max_invalid_tool_calls: Annotated[Optional[int],
         typer.Option(help="Maximum allowed invalid tool-call emissions across referenced normalized results."),
     ] = None,
-    min_tool_parser_repair_valid_rate: Annotated[
-        float | None,
+    min_tool_parser_repair_valid_rate: Annotated[Optional[float],
         typer.Option(help="Minimum valid tool-parser repair rate percentage across referenced normalized results."),
     ] = None,
     include_tool_parser_repair_summary: Annotated[
@@ -1711,7 +1701,7 @@ def matrix_gate(
             )
         ),
     ] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON gate report output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON gate report output path.")] = None,
 ) -> None:
     """Evaluate matrix-level CI/release thresholds from an execution summary."""
     try:
@@ -1748,11 +1738,11 @@ def matrix_gate(
         raise typer.Exit(code=1)
 
 
-def _parse_failure_class_thresholds(items: list[str] | None) -> dict[str, int]:
+def _parse_failure_class_thresholds(items: Optional[list[str]]) -> dict[str, int]:
     return _parse_count_thresholds(items, option_name="--max-failure-class", item_name="failure class")
 
 
-def _parse_count_thresholds(items: list[str] | None, *, option_name: str, item_name: str) -> dict[str, int]:
+def _parse_count_thresholds(items: Optional[list[str]], *, option_name: str, item_name: str) -> dict[str, int]:
     thresholds: dict[str, int] = {}
     for raw in items or []:
         if "=" not in raw:
@@ -1776,8 +1766,8 @@ def _parse_count_thresholds(items: list[str] | None, *, option_name: str, item_n
 def export(
     run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
     format: Annotated[str, typer.Option(help="Comma-separated formats: jsonl,csv,parquet.")] = "jsonl,csv",
-    output_dir: Annotated[Path | None, typer.Option(help="Optional export output directory.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for result export events.")] = None,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Optional export output directory.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for result export events.")] = None,
 ) -> None:
     """Export normalized results from a completed run directory."""
     formats = [item.strip() for item in format.split(",")]
@@ -1801,16 +1791,15 @@ def dashboard(
     runs: Annotated[Path, typer.Option(help="Directory containing AgentBlaster run artifacts.")] = Path("runs"),
     host: Annotated[str, typer.Option(help="Host interface to bind. Defaults to loopback.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to bind.")] = 8765,
-    policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path for dashboard controls.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional agentblaster.policy.yaml path for dashboard controls.")] = None,
     allow_non_loopback: Annotated[
         bool,
         typer.Option(help="Allow binding the dashboard beyond loopback on trusted networks only."),
     ] = False,
-    auth_token_env: Annotated[
-        str | None,
+    auth_token_env: Annotated[Optional[str],
         typer.Option(help="Environment variable containing the dashboard auth token. Required for non-loopback binds."),
     ] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for dashboard start events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for dashboard start events.")] = None,
 ) -> None:
     """Serve the local dashboard for completed benchmark runs."""
     auth_token = _dashboard_auth_token_from_env(auth_token_env)
@@ -1852,7 +1841,7 @@ def dashboard(
     )
 
 
-def _dashboard_auth_token_from_env(env_name: str | None) -> str | None:
+def _dashboard_auth_token_from_env(env_name: Optional[str]) -> str | None:
     if env_name is None:
         return None
     token = os.environ.get(env_name)
@@ -1873,7 +1862,7 @@ def _secret_from_env(env_name: str, label: str) -> str:
 @app.command()
 def compare(
     run_dirs: Annotated[list[Path], typer.Argument(help="Two or more run artifact directories.")],
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON comparison output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON comparison output path.")] = None,
 ) -> None:
     """Compare completed run directories."""
     rows = compare_runs(run_dirs)
@@ -1886,25 +1875,21 @@ def compare(
 def compare_gate(
     baseline_run_dir: Annotated[Path, typer.Argument(help="Baseline run artifact directory.")],
     candidate_run_dir: Annotated[Path, typer.Argument(help="Candidate run artifact directory.")],
-    min_pass_rate: Annotated[float | None, typer.Option(help="Minimum candidate pass rate percentage.")] = None,
-    max_pass_rate_drop: Annotated[float | None, typer.Option(help="Maximum allowed pass-rate drop in percentage points.")] = None,
-    max_avg_latency_regression_pct: Annotated[
-        float | None,
+    min_pass_rate: Annotated[Optional[float], typer.Option(help="Minimum candidate pass rate percentage.")] = None,
+    max_pass_rate_drop: Annotated[Optional[float], typer.Option(help="Maximum allowed pass-rate drop in percentage points.")] = None,
+    max_avg_latency_regression_pct: Annotated[Optional[float],
         typer.Option(help="Maximum allowed average latency regression percentage."),
     ] = None,
-    max_p95_latency_regression_pct: Annotated[
-        float | None,
+    max_p95_latency_regression_pct: Annotated[Optional[float],
         typer.Option(help="Maximum allowed p95 latency regression percentage."),
     ] = None,
-    max_avg_ttft_regression_pct: Annotated[
-        float | None,
+    max_avg_ttft_regression_pct: Annotated[Optional[float],
         typer.Option(help="Maximum allowed average TTFT regression percentage."),
     ] = None,
-    min_decode_tokens_per_second_ratio: Annotated[
-        float | None,
+    min_decode_tokens_per_second_ratio: Annotated[Optional[float],
         typer.Option(help="Minimum candidate/baseline decode throughput ratio."),
     ] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON gate report output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON gate report output path.")] = None,
 ) -> None:
     """Evaluate a baseline-vs-candidate comparison gate for CI/release regression checks."""
     report = evaluate_comparison_gate(
@@ -1927,15 +1912,14 @@ def compare_gate(
 @app.command("telemetry-audit")
 def telemetry_audit_command(
     run_dir: Annotated[Path, typer.Argument(help="Completed run artifact directory.")],
-    required_field: Annotated[
-        list[str] | None,
+    required_field: Annotated[Optional[list[str]],
         typer.Option("--required-field", help="Normalized telemetry field required for comparability. Repeatable."),
     ] = None,
     min_required_completeness: Annotated[
         float,
         typer.Option(help="Minimum completeness ratio for required fields, between 0 and 1."),
     ] = 1.0,
-    output_json: Annotated[Path | None, typer.Option(help="Optional telemetry audit JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional telemetry audit JSON output path.")] = None,
     fail_on_findings: Annotated[
         bool,
         typer.Option("--fail-on-findings/--no-fail-on-findings", help="Exit non-zero when blocker findings are present."),
@@ -1968,10 +1952,10 @@ def cleanup(
     bundles: Annotated[bool, typer.Option(help="Delete generated publication/evidence bundle artifacts within the run directory.")] = False,
     all_artifacts: Annotated[bool, typer.Option(help="Delete the entire run directory.")] = False,
     execute: Annotated[bool, typer.Option(help="Apply cleanup. Defaults to dry-run planning.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON path for cleanup plan or execution result.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for manual cleanup events.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON path for cleanup plan or execution result.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for manual cleanup events.")] = None,
     require_audit_log: Annotated[bool, typer.Option(help="Fail unless --audit-log is supplied.")] = False,
-    policy: Annotated[Path | None, typer.Option(help="Optional security policy file for cleanup controls.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional security policy file for cleanup controls.")] = None,
 ) -> None:
     """Plan or apply cleanup of generated run artifacts."""
     try:
@@ -2052,10 +2036,10 @@ def cleanup(
 def cleanup_expired(
     runs: Annotated[Path, typer.Option(help="Directory containing AgentBlaster run artifacts.")] = Path("runs"),
     execute: Annotated[bool, typer.Option(help="Apply planned retention cleanup actions. Defaults to dry-run.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON path for cleanup plan or execution result.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for retention cleanup events.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON path for cleanup plan or execution result.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for retention cleanup events.")] = None,
     require_audit_log: Annotated[bool, typer.Option(help="Fail unless --audit-log is supplied.")] = False,
-    policy: Annotated[Path | None, typer.Option(help="Optional security policy file for cleanup controls.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional security policy file for cleanup controls.")] = None,
 ) -> None:
     """Plan or apply cleanup for artifacts whose retention metadata has expired."""
     try:
@@ -2178,7 +2162,7 @@ def verify_signature(
 @app.command()
 def bundle(
     run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
-    output_dir: Annotated[Path | None, typer.Option(help="Directory for the replay bundle.")] = None,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Directory for the replay bundle.")] = None,
     strict: Annotated[bool, typer.Option(help="Fail if untracked extra files are present.")] = False,
 ) -> None:
     """Create a portable replay bundle from a verified completed run."""
@@ -2192,8 +2176,8 @@ def bundle(
 @app.command("publication-bundle")
 def publication_bundle(
     run_dir: Annotated[Path, typer.Argument(help="Run artifact directory.")],
-    output_dir: Annotated[Path | None, typer.Option(help="Directory for the publication bundle.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for publication bundle events.")] = None,
+    output_dir: Annotated[Optional[Path], typer.Option(help="Directory for the publication bundle.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for publication bundle events.")] = None,
 ) -> None:
     """Create a shareable bundle containing only redacted publication artifacts."""
     try:
@@ -2213,11 +2197,11 @@ def publication_bundle(
 def providers_readiness(
     provider: Annotated[str, typer.Option(help="Configured provider profile to inspect.")],
     suite: Annotated[str, typer.Option(help="Built-in suite name to inspect.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="Optional YAML suite definition to inspect instead of a built-in suite.")] = None,
-    model: Annotated[str | None, typer.Option(help="Model id intended for this benchmark run.")] = None,
-    policy: Annotated[Path | None, typer.Option(help="Optional security policy file.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="Optional YAML suite definition to inspect instead of a built-in suite.")] = None,
+    model: Annotated[Optional[str], typer.Option(help="Model id intended for this benchmark run.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional security policy file.")] = None,
     strict_unknown: Annotated[bool, typer.Option(help="Treat unknown provider capabilities as readiness blockers.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the readiness dossier.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the readiness dossier.")] = None,
 ) -> None:
     """Build a no-network benchmark readiness dossier for one provider/suite pair."""
     provider_config = ProviderStore().get(provider)
@@ -2238,9 +2222,9 @@ def providers_readiness(
 
 @providers_app.command("metric-coverage")
 def providers_metric_coverage(
-    provider: Annotated[str | None, typer.Option(help="Configured provider profile to inspect. Omit with --catalog.")] = None,
+    provider: Annotated[Optional[str], typer.Option(help="Configured provider profile to inspect. Omit with --catalog.")] = None,
     catalog: Annotated[bool, typer.Option(help="Show static coverage catalog for supported contract families.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for metric coverage.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for metric coverage.")] = None,
 ) -> None:
     """Report normalized metric coverage for provider stats comparability."""
     if catalog:
@@ -2258,10 +2242,10 @@ def providers_metric_coverage(
 def catalog_normalize_telemetry(
     input_json: Annotated[Path, typer.Argument(help="Raw provider response JSON file to normalize.")],
     contract: Annotated[ApiContract, typer.Option(help="Provider contract for the raw response.")],
-    native_adapter: Annotated[str | None, typer.Option(help="Optional native adapter hint, for example ollama or lm-studio.")] = None,
-    latency_ms: Annotated[float | None, typer.Option(help="Optional measured request latency in milliseconds.")] = None,
-    ttft_ms: Annotated[float | None, typer.Option(help="Optional measured time-to-first-token in milliseconds.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional normalized telemetry JSON output path.")] = None,
+    native_adapter: Annotated[Optional[str], typer.Option(help="Optional native adapter hint, for example ollama or lm-studio.")] = None,
+    latency_ms: Annotated[Optional[float], typer.Option(help="Optional measured request latency in milliseconds.")] = None,
+    ttft_ms: Annotated[Optional[float], typer.Option(help="Optional measured time-to-first-token in milliseconds.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional normalized telemetry JSON output path.")] = None,
 ) -> None:
     """Normalize a raw provider response sample into AgentBlaster telemetry fields."""
     try:
@@ -2287,14 +2271,14 @@ def catalog_normalize_telemetry(
 @providers_app.command("contract-check")
 def providers_contract_check(
     provider: Annotated[str, typer.Option(help="Configured provider profile to inspect or execute against.")],
-    model: Annotated[str | None, typer.Option(help="Model id to use when executing checks.")] = None,
+    model: Annotated[Optional[str], typer.Option(help="Model id to use when executing checks.")] = None,
     execute: Annotated[bool, typer.Option(help="Execute checks. Without this flag the command only prints a no-network plan.")] = False,
     allow_remote: Annotated[bool, typer.Option(help="Allow executing checks against providers marked remote.")] = False,
     skip_streaming: Annotated[bool, typer.Option(help="Skip streaming contract checks.")] = False,
     skip_structured: Annotated[bool, typer.Option(help="Skip structured-output contract checks.")] = False,
     skip_tools: Annotated[bool, typer.Option(help="Skip tool-call contract checks.")] = False,
     timeout: Annotated[float, typer.Option(help="Per-request timeout in seconds when executing checks.")] = 10.0,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the contract-check report.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the contract-check report.")] = None,
 ) -> None:
     """Plan or execute standardized provider contract checks."""
     provider_config = ProviderStore().get(provider)
@@ -2347,7 +2331,7 @@ def quality_command(
 
 @quality_app.command("chrome-checklist")
 def quality_chrome_checklist(
-    output: Annotated[Path | None, typer.Option(help="Optional markdown output path.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional markdown output path.")] = None,
 ) -> None:
     """Print or write the Chrome/Codex dashboard validation checklist."""
     checklist = render_chrome_validation_markdown()
@@ -2361,7 +2345,7 @@ def quality_chrome_checklist(
 
 @quality_app.command("chrome-plan")
 def quality_chrome_plan(
-    output: Annotated[Path | None, typer.Option(help="Optional output path for the GUI plan artifact.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path for the GUI plan artifact.")] = None,
     output_format: Annotated[str, typer.Option("--format", help="Plan format: json or md.")] = "json",
     dashboard_url: Annotated[str, typer.Option(help="Dashboard URL expected during Chrome/Codex validation.")] = "http://127.0.0.1:8765",
     fixture_profile: Annotated[str, typer.Option(help="Named fixture profile expected for deterministic GUI validation.")] = "deterministic-redacted",
@@ -2403,8 +2387,8 @@ def quality_dashboard_fixture(
 @evidence_app.command("index")
 def evidence_index(
     name: Annotated[str, typer.Option(help="Evidence index name.")] = "evidence-index",
-    artifact: Annotated[list[Path] | None, typer.Option(help="Review artifact path. Can be repeated.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional evidence index JSON output path.")] = None,
+    artifact: Annotated[Optional[list[Path]], typer.Option(help="Review artifact path. Can be repeated.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional evidence index JSON output path.")] = None,
 ) -> None:
     """Create a compact no-dispatch index over supplied review artifacts."""
     try:
@@ -2419,12 +2403,12 @@ def evidence_index(
 @security_app.command("posture")
 def security_posture(
     name: Annotated[str, typer.Option(help="Security posture report name.")] = "security-posture",
-    policy: Annotated[Path | None, typer.Option(help="Optional enterprise security policy YAML to summarize.")] = None,
-    provider_audit: Annotated[list[Path] | None, typer.Option("--provider-audit", help="Provider audit JSON artifact. Can be repeated.")] = None,
-    redaction_scan: Annotated[list[Path] | None, typer.Option("--redaction-scan", help="Redaction scan JSON artifact. Can be repeated.")] = None,
-    review_artifact: Annotated[list[Path] | None, typer.Option("--review-artifact", help="Review artifact JSON to summarize by security flags. Can be repeated.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional security posture JSON output path.")] = None,
-    output_md: Annotated[Path | None, typer.Option(help="Optional security posture Markdown output path.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional enterprise security policy YAML to summarize.")] = None,
+    provider_audit: Annotated[Optional[list[Path]], typer.Option("--provider-audit", help="Provider audit JSON artifact. Can be repeated.")] = None,
+    redaction_scan: Annotated[Optional[list[Path]], typer.Option("--redaction-scan", help="Redaction scan JSON artifact. Can be repeated.")] = None,
+    review_artifact: Annotated[Optional[list[Path]], typer.Option("--review-artifact", help="Review artifact JSON to summarize by security flags. Can be repeated.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional security posture JSON output path.")] = None,
+    output_md: Annotated[Optional[Path], typer.Option(help="Optional security posture Markdown output path.")] = None,
     fail_on_blockers: Annotated[
         bool,
         typer.Option("--fail-on-blockers/--no-fail-on-blockers", help="Exit non-zero when posture blockers are present."),
@@ -2467,7 +2451,7 @@ def release_provenance(
         bool,
         typer.Option(help="Skip hashing source and metadata files."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for release artifact events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for release artifact events.")] = None,
 ) -> None:
     """Write a redaction-safe release provenance and lightweight SBOM JSON artifact."""
     try:
@@ -2492,12 +2476,12 @@ def release_provenance(
 @release_app.command("packaging-readiness")
 def release_packaging_readiness(
     project_root: Annotated[Path, typer.Option(help="Project root containing pyproject.toml.")] = Path("."),
-    output_json: Annotated[Path | None, typer.Option(help="Optional output JSON path for the packaging readiness artifact.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional output JSON path for the packaging readiness artifact.")] = None,
     fail_on_gaps: Annotated[
         bool,
         typer.Option("--fail-on-gaps/--no-fail-on-gaps", help="Exit non-zero when static packaging readiness gaps are found."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for release readiness events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for release readiness events.")] = None,
 ) -> None:
     """Generate a static package metadata, entrypoint, docs, and test-marker readiness report."""
     output = output_json or Path("reports/packaging-readiness.json")
@@ -2523,41 +2507,40 @@ def release_packaging_readiness(
 def release_qualification_bundle(
     output_dir: Annotated[Path, typer.Option(help="Directory for the release qualification bundle.")],
     name: Annotated[str, typer.Option(help="Release qualification bundle name.")] = "release-qualification",
-    evidence_bundle: Annotated[list[Path] | None, typer.Option(help="Evidence bundle artifact. Can be repeated.")] = None,
-    provider_audit: Annotated[list[Path] | None, typer.Option(help="Provider audit JSON artifact. Can be repeated.")] = None,
-    provider_contract_check: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check JSON artifact. Can be repeated.")] = None,
-    provider_contract_matrix: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check matrix JSON artifact. Can be repeated.")] = None,
-    comparison_gate: Annotated[list[Path] | None, typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
-    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
-    telemetry_audit: Annotated[list[Path] | None, typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
-    matrix_pressure_audit: Annotated[list[Path] | None, typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
-    matrix_saturation_report: Annotated[list[Path] | None, typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
-    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
-    implementation_status: Annotated[list[Path] | None, typer.Option(help="Implementation status JSON artifact. Can be repeated.")] = None,
-    campaign_preflight_manifest: Annotated[list[Path] | None, typer.Option(help="Campaign preflight manifest JSON artifact. Can be repeated.")] = None,
-    benchmark_readiness: Annotated[list[Path] | None, typer.Option(help="Benchmark readiness dossier JSON artifact. Can be repeated.")] = None,
-    benchmark_readiness_list: Annotated[
-        list[Path] | None,
+    evidence_bundle: Annotated[Optional[list[Path]], typer.Option(help="Evidence bundle artifact. Can be repeated.")] = None,
+    provider_audit: Annotated[Optional[list[Path]], typer.Option(help="Provider audit JSON artifact. Can be repeated.")] = None,
+    provider_contract_check: Annotated[Optional[list[Path]], typer.Option(help="Executed provider contract-check JSON artifact. Can be repeated.")] = None,
+    provider_contract_matrix: Annotated[Optional[list[Path]], typer.Option(help="Executed provider contract-check matrix JSON artifact. Can be repeated.")] = None,
+    comparison_gate: Annotated[Optional[list[Path]], typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[Optional[list[Path]], typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    telemetry_audit: Annotated[Optional[list[Path]], typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
+    matrix_pressure_audit: Annotated[Optional[list[Path]], typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    matrix_saturation_report: Annotated[Optional[list[Path]], typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
+    matrix_scorecard: Annotated[Optional[list[Path]], typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    implementation_status: Annotated[Optional[list[Path]], typer.Option(help="Implementation status JSON artifact. Can be repeated.")] = None,
+    campaign_preflight_manifest: Annotated[Optional[list[Path]], typer.Option(help="Campaign preflight manifest JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness: Annotated[Optional[list[Path]], typer.Option(help="Benchmark readiness dossier JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness_list: Annotated[Optional[list[Path]],
         typer.Option(help="Text file with one benchmark readiness dossier JSON path per line. Can be repeated."),
     ] = None,
-    claim_readiness: Annotated[list[Path] | None, typer.Option(help="Claim readiness JSON artifact. Can be repeated.")] = None,
-    engine_advisory: Annotated[list[Path] | None, typer.Option(help="Engine improvement advisory JSON artifact. Can be repeated.")] = None,
-    evidence_index: Annotated[list[Path] | None, typer.Option(help="Evidence index JSON artifact. Can be repeated.")] = None,
-    suite_audit: Annotated[list[Path] | None, typer.Option(help="Suite audit JSON artifact. Can be repeated.")] = None,
-    metric_coverage: Annotated[list[Path] | None, typer.Option(help="Metric coverage JSON artifact. Can be repeated.")] = None,
-    normalized_telemetry: Annotated[list[Path] | None, typer.Option(help="Normalized telemetry sample JSON artifact. Can be repeated.")] = None,
-    release_provenance: Annotated[Path | None, typer.Option(help="Release provenance JSON artifact.")] = None,
-    publication_bundle: Annotated[list[Path] | None, typer.Option(help="Publication bundle artifact. Can be repeated.")] = None,
-    publication_brief: Annotated[list[Path] | None, typer.Option(help="Publication brief JSON artifact. Can be repeated.")] = None,
-    protocol_repair_posture: Annotated[list[Path] | None, typer.Option(help="Protocol repair posture JSON artifact. Can be repeated.")] = None,
-    matrix_publication_bundle: Annotated[list[Path] | None, typer.Option(help="Matrix publication bundle artifact. Can be repeated.")] = None,
-    workflow_readiness: Annotated[list[Path] | None, typer.Option(help="Workflow readiness JSON artifact. Can be repeated.")] = None,
-    security_posture: Annotated[list[Path] | None, typer.Option(help="Security posture JSON artifact. Can be repeated.")] = None,
-    harness_review: Annotated[list[Path] | None, typer.Option(help="Harness review JSON artifact. Can be repeated.")] = None,
-    suite_calibration_report: Annotated[list[Path] | None, typer.Option(help="Suite calibration report JSON artifact. Can be repeated.")] = None,
-    selftest_report: Annotated[list[Path] | None, typer.Option(help="Selftest report artifact. Can be repeated.")] = None,
-    sdlc_validation_manifest: Annotated[list[Path] | None, typer.Option(help="SDLC validation manifest JSON artifact. Can be repeated.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for release qualification events.")] = None,
+    claim_readiness: Annotated[Optional[list[Path]], typer.Option(help="Claim readiness JSON artifact. Can be repeated.")] = None,
+    engine_advisory: Annotated[Optional[list[Path]], typer.Option(help="Engine improvement advisory JSON artifact. Can be repeated.")] = None,
+    evidence_index: Annotated[Optional[list[Path]], typer.Option(help="Evidence index JSON artifact. Can be repeated.")] = None,
+    suite_audit: Annotated[Optional[list[Path]], typer.Option(help="Suite audit JSON artifact. Can be repeated.")] = None,
+    metric_coverage: Annotated[Optional[list[Path]], typer.Option(help="Metric coverage JSON artifact. Can be repeated.")] = None,
+    normalized_telemetry: Annotated[Optional[list[Path]], typer.Option(help="Normalized telemetry sample JSON artifact. Can be repeated.")] = None,
+    release_provenance: Annotated[Optional[Path], typer.Option(help="Release provenance JSON artifact.")] = None,
+    publication_bundle: Annotated[Optional[list[Path]], typer.Option(help="Publication bundle artifact. Can be repeated.")] = None,
+    publication_brief: Annotated[Optional[list[Path]], typer.Option(help="Publication brief JSON artifact. Can be repeated.")] = None,
+    protocol_repair_posture: Annotated[Optional[list[Path]], typer.Option(help="Protocol repair posture JSON artifact. Can be repeated.")] = None,
+    matrix_publication_bundle: Annotated[Optional[list[Path]], typer.Option(help="Matrix publication bundle artifact. Can be repeated.")] = None,
+    workflow_readiness: Annotated[Optional[list[Path]], typer.Option(help="Workflow readiness JSON artifact. Can be repeated.")] = None,
+    security_posture: Annotated[Optional[list[Path]], typer.Option(help="Security posture JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[Optional[list[Path]], typer.Option(help="Harness review JSON artifact. Can be repeated.")] = None,
+    suite_calibration_report: Annotated[Optional[list[Path]], typer.Option(help="Suite calibration report JSON artifact. Can be repeated.")] = None,
+    selftest_report: Annotated[Optional[list[Path]], typer.Option(help="Selftest report artifact. Can be repeated.")] = None,
+    sdlc_validation_manifest: Annotated[Optional[list[Path]], typer.Option(help="SDLC validation manifest JSON artifact. Can be repeated.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for release qualification events.")] = None,
 ) -> None:
     """Create a redaction-safe release qualification package from gate and evidence artifacts."""
     resolved_benchmark_readiness = _benchmark_readiness_paths(benchmark_readiness, benchmark_readiness_list)
@@ -2640,41 +2623,40 @@ def release_qualification_bundle(
 @release_app.command("claim-readiness")
 def release_claim_readiness(
     name: Annotated[str, typer.Option(help="Benchmark claim or campaign name.")] = "benchmark-claim",
-    experiment_manifest: Annotated[Path | None, typer.Option(help="Experiment manifest JSON artifact.")] = None,
-    experiment_gate: Annotated[Path | None, typer.Option(help="Experiment gate JSON artifact.")] = None,
-    provider_contract_check: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check JSON artifact. Can be repeated.")] = None,
-    provider_contract_matrix: Annotated[list[Path] | None, typer.Option(help="Executed provider contract-check matrix JSON artifact. Can be repeated.")] = None,
-    provider_audit: Annotated[list[Path] | None, typer.Option(help="Optional provider audit JSON artifact. Can be repeated.")] = None,
-    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
-    comparison_gate: Annotated[list[Path] | None, typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
-    telemetry_audit: Annotated[list[Path] | None, typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
-    normalized_telemetry: Annotated[list[Path] | None, typer.Option(help="Optional normalized telemetry JSON artifact. Can be repeated.")] = None,
-    matrix_pressure_audit: Annotated[list[Path] | None, typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
-    matrix_saturation_report: Annotated[list[Path] | None, typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
-    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
-    implementation_status: Annotated[list[Path] | None, typer.Option(help="Optional implementation status JSON artifact. Can be repeated.")] = None,
-    release_provenance: Annotated[Path | None, typer.Option(help="Release provenance JSON artifact.")] = None,
-    release_qualification_bundle: Annotated[Path | None, typer.Option(help="Release qualification bundle artifact.")] = None,
-    redaction_scan: Annotated[Path | None, typer.Option(help="Redaction scan JSON artifact.")] = None,
-    publication_bundle: Annotated[list[Path] | None, typer.Option(help="Publication bundle artifact. Can be repeated.")] = None,
-    matrix_publication_bundle: Annotated[list[Path] | None, typer.Option(help="Matrix publication bundle artifact. Can be repeated.")] = None,
-    protocol_repair_posture: Annotated[list[Path] | None, typer.Option(help="Optional protocol repair posture JSON artifact. Can be repeated.")] = None,
-    workflow_readiness: Annotated[list[Path] | None, typer.Option(help="Optional workflow readiness JSON artifact. Can be repeated.")] = None,
-    security_posture: Annotated[list[Path] | None, typer.Option(help="Optional security posture JSON artifact. Can be repeated.")] = None,
-    harness_review: Annotated[list[Path] | None, typer.Option(help="Optional harness review JSON artifact for generated suites. Can be repeated.")] = None,
-    suite_calibration_report: Annotated[list[Path] | None, typer.Option(help="Optional suite calibration report JSON artifact. Can be repeated.")] = None,
-    engine_advisory: Annotated[list[Path] | None, typer.Option(help="Optional engine improvement advisory JSON artifact. Can be repeated.")] = None,
-    evidence_index: Annotated[list[Path] | None, typer.Option(help="Optional evidence index JSON artifact. Can be repeated.")] = None,
-    suite_audit: Annotated[list[Path] | None, typer.Option(help="Optional suite audit JSON artifact. Can be repeated.")] = None,
-    metric_coverage: Annotated[list[Path] | None, typer.Option(help="Optional metric coverage JSON artifact. Can be repeated.")] = None,
-    campaign_preflight_manifest: Annotated[Path | None, typer.Option(help="Optional campaign preflight manifest JSON artifact.")] = None,
-    selftest_report: Annotated[list[Path] | None, typer.Option(help="Optional AgentBlaster selftest report JSON artifact. Can be repeated.")] = None,
-    benchmark_readiness: Annotated[list[Path] | None, typer.Option(help="Optional benchmark readiness dossier JSON artifact. Can be repeated.")] = None,
-    benchmark_readiness_list: Annotated[
-        list[Path] | None,
+    experiment_manifest: Annotated[Optional[Path], typer.Option(help="Experiment manifest JSON artifact.")] = None,
+    experiment_gate: Annotated[Optional[Path], typer.Option(help="Experiment gate JSON artifact.")] = None,
+    provider_contract_check: Annotated[Optional[list[Path]], typer.Option(help="Executed provider contract-check JSON artifact. Can be repeated.")] = None,
+    provider_contract_matrix: Annotated[Optional[list[Path]], typer.Option(help="Executed provider contract-check matrix JSON artifact. Can be repeated.")] = None,
+    provider_audit: Annotated[Optional[list[Path]], typer.Option(help="Optional provider audit JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[Optional[list[Path]], typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    comparison_gate: Annotated[Optional[list[Path]], typer.Option(help="Comparison gate JSON artifact. Can be repeated.")] = None,
+    telemetry_audit: Annotated[Optional[list[Path]], typer.Option(help="Telemetry audit JSON artifact. Can be repeated.")] = None,
+    normalized_telemetry: Annotated[Optional[list[Path]], typer.Option(help="Optional normalized telemetry JSON artifact. Can be repeated.")] = None,
+    matrix_pressure_audit: Annotated[Optional[list[Path]], typer.Option(help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    matrix_saturation_report: Annotated[Optional[list[Path]], typer.Option(help="Matrix saturation report JSON artifact. Can be repeated.")] = None,
+    matrix_scorecard: Annotated[Optional[list[Path]], typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    implementation_status: Annotated[Optional[list[Path]], typer.Option(help="Optional implementation status JSON artifact. Can be repeated.")] = None,
+    release_provenance: Annotated[Optional[Path], typer.Option(help="Release provenance JSON artifact.")] = None,
+    release_qualification_bundle: Annotated[Optional[Path], typer.Option(help="Release qualification bundle artifact.")] = None,
+    redaction_scan: Annotated[Optional[Path], typer.Option(help="Redaction scan JSON artifact.")] = None,
+    publication_bundle: Annotated[Optional[list[Path]], typer.Option(help="Publication bundle artifact. Can be repeated.")] = None,
+    matrix_publication_bundle: Annotated[Optional[list[Path]], typer.Option(help="Matrix publication bundle artifact. Can be repeated.")] = None,
+    protocol_repair_posture: Annotated[Optional[list[Path]], typer.Option(help="Optional protocol repair posture JSON artifact. Can be repeated.")] = None,
+    workflow_readiness: Annotated[Optional[list[Path]], typer.Option(help="Optional workflow readiness JSON artifact. Can be repeated.")] = None,
+    security_posture: Annotated[Optional[list[Path]], typer.Option(help="Optional security posture JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[Optional[list[Path]], typer.Option(help="Optional harness review JSON artifact for generated suites. Can be repeated.")] = None,
+    suite_calibration_report: Annotated[Optional[list[Path]], typer.Option(help="Optional suite calibration report JSON artifact. Can be repeated.")] = None,
+    engine_advisory: Annotated[Optional[list[Path]], typer.Option(help="Optional engine improvement advisory JSON artifact. Can be repeated.")] = None,
+    evidence_index: Annotated[Optional[list[Path]], typer.Option(help="Optional evidence index JSON artifact. Can be repeated.")] = None,
+    suite_audit: Annotated[Optional[list[Path]], typer.Option(help="Optional suite audit JSON artifact. Can be repeated.")] = None,
+    metric_coverage: Annotated[Optional[list[Path]], typer.Option(help="Optional metric coverage JSON artifact. Can be repeated.")] = None,
+    campaign_preflight_manifest: Annotated[Optional[Path], typer.Option(help="Optional campaign preflight manifest JSON artifact.")] = None,
+    selftest_report: Annotated[Optional[list[Path]], typer.Option(help="Optional AgentBlaster selftest report JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness: Annotated[Optional[list[Path]], typer.Option(help="Optional benchmark readiness dossier JSON artifact. Can be repeated.")] = None,
+    benchmark_readiness_list: Annotated[Optional[list[Path]],
         typer.Option(help="Text file with one benchmark readiness dossier JSON path per line. Can be repeated."),
     ] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional claim readiness JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional claim readiness JSON output path.")] = None,
     fail_on_blockers: Annotated[
         bool,
         typer.Option("--fail-on-blockers/--no-fail-on-blockers", help="Exit non-zero when required claim evidence is missing or failed."),
@@ -2729,12 +2711,12 @@ def release_claim_readiness(
 def release_publication_brief(
     claim_readiness: Annotated[Path, typer.Option(help="Claim readiness JSON artifact to summarize.")],
     name: Annotated[str, typer.Option(help="Benchmark claim or campaign name.")] = "benchmark-claim",
-    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
-    release_provenance: Annotated[Path | None, typer.Option(help="Optional release provenance JSON artifact.")] = None,
-    evidence_index: Annotated[Path | None, typer.Option(help="Optional evidence index JSON artifact.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional publication brief JSON output path.")] = None,
-    output_md: Annotated[Path | None, typer.Option(help="Optional publication brief Markdown output path.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for publication-brief events.")] = None,
+    matrix_scorecard: Annotated[Optional[list[Path]], typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    release_provenance: Annotated[Optional[Path], typer.Option(help="Optional release provenance JSON artifact.")] = None,
+    evidence_index: Annotated[Optional[Path], typer.Option(help="Optional evidence index JSON artifact.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional publication brief JSON output path.")] = None,
+    output_md: Annotated[Optional[Path], typer.Option(help="Optional publication brief Markdown output path.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for publication-brief events.")] = None,
 ) -> None:
     """Create a redaction-safe executive/media/corporate publication brief from review evidence."""
     try:
@@ -2772,16 +2754,16 @@ def release_publication_brief(
 @release_app.command("protocol-repair")
 def release_protocol_repair(
     name: Annotated[str, typer.Option(help="Benchmark claim or campaign name.")] = "benchmark-claim",
-    claim_readiness: Annotated[Path | None, typer.Option(help="Optional claim readiness JSON artifact to mine for compact protocol-repair evidence.")] = None,
-    matrix_scorecard: Annotated[list[Path] | None, typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
-    matrix_gate: Annotated[list[Path] | None, typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional protocol-repair posture JSON output path.")] = None,
-    output_md: Annotated[Path | None, typer.Option(help="Optional protocol-repair posture Markdown output path.")] = None,
+    claim_readiness: Annotated[Optional[Path], typer.Option(help="Optional claim readiness JSON artifact to mine for compact protocol-repair evidence.")] = None,
+    matrix_scorecard: Annotated[Optional[list[Path]], typer.Option(help="Matrix scorecard JSON artifact. Can be repeated.")] = None,
+    matrix_gate: Annotated[Optional[list[Path]], typer.Option(help="Matrix gate JSON artifact. Can be repeated.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional protocol-repair posture JSON output path.")] = None,
+    output_md: Annotated[Optional[Path], typer.Option(help="Optional protocol-repair posture Markdown output path.")] = None,
     fail_on_review: Annotated[
         bool,
         typer.Option("--fail-on-review/--no-fail-on-review", help="Exit non-zero when protocol-repair posture is not ready."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for protocol-repair posture events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for protocol-repair posture events.")] = None,
 ) -> None:
     """Create a redaction-safe protocol-repair posture artifact from compact review evidence."""
     try:
@@ -2820,22 +2802,21 @@ def release_protocol_repair(
 @release_app.command("workflow-readiness")
 def release_workflow_readiness(
     name: Annotated[str, typer.Option(help="Benchmark campaign or claim name.")] = "workflow-readiness",
-    suite: Annotated[list[str] | None, typer.Option("--suite", help="Built-in suite to include. Can be repeated.")] = None,
-    suite_file: Annotated[list[Path] | None, typer.Option("--suite-file", help="Suite YAML file to include. Can be repeated.")] = None,
-    matrix: Annotated[list[Path] | None, typer.Option("--matrix", help="Matrix YAML file to inspect. Can be repeated.")] = None,
-    matrix_pressure_audit: Annotated[list[Path] | None, typer.Option("--matrix-pressure-audit", help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
-    harness_review: Annotated[list[Path] | None, typer.Option("--harness-review", help="Harness review JSON artifact. Can be repeated.")] = None,
-    required_surface: Annotated[
-        list[str] | None,
+    suite: Annotated[Optional[list[str]], typer.Option("--suite", help="Built-in suite to include. Can be repeated.")] = None,
+    suite_file: Annotated[Optional[list[Path]], typer.Option("--suite-file", help="Suite YAML file to include. Can be repeated.")] = None,
+    matrix: Annotated[Optional[list[Path]], typer.Option("--matrix", help="Matrix YAML file to inspect. Can be repeated.")] = None,
+    matrix_pressure_audit: Annotated[Optional[list[Path]], typer.Option("--matrix-pressure-audit", help="Matrix pressure audit JSON artifact. Can be repeated.")] = None,
+    harness_review: Annotated[Optional[list[Path]], typer.Option("--harness-review", help="Harness review JSON artifact. Can be repeated.")] = None,
+    required_surface: Annotated[Optional[list[str]],
         typer.Option("--required-surface", help="Required workflow surface. Defaults to the full agentic readiness set. Can be repeated."),
     ] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional workflow readiness JSON output path.")] = None,
-    output_md: Annotated[Path | None, typer.Option(help="Optional workflow readiness Markdown output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional workflow readiness JSON output path.")] = None,
+    output_md: Annotated[Optional[Path], typer.Option(help="Optional workflow readiness Markdown output path.")] = None,
     fail_on_gaps: Annotated[
         bool,
         typer.Option("--fail-on-gaps/--no-fail-on-gaps", help="Exit non-zero when required workflow surfaces are missing."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for workflow-readiness events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for workflow-readiness events.")] = None,
 ) -> None:
     """Create a no-dispatch readiness artifact for intended agentic workflow-surface coverage."""
     try:
@@ -2879,7 +2860,7 @@ def release_workflow_readiness(
 
 @catalog_app.command("simulated-tools")
 def catalog_simulated_tools(
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
 ) -> None:
     """List deterministic simulated tools bundled with AgentBlaster."""
     items = []
@@ -2900,7 +2881,7 @@ def catalog_simulated_tools(
 
 @catalog_app.command("artifact-schemas")
 def catalog_artifact_schemas(
-    output: Annotated[Path | None, typer.Option(help="Optional output path.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path.")] = None,
     format: Annotated[str, typer.Option("--format", help="Output format: markdown or json.")] = "markdown",
 ) -> None:
     """Render the static artifact schema registry for reports, runs, matrices, and release evidence."""
@@ -2921,7 +2902,7 @@ def catalog_artifact_schemas(
 
 @catalog_app.command("mcp-profiles")
 def catalog_mcp_profiles(
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
 ) -> None:
     """List deterministic MCP fixture profiles bundled with AgentBlaster."""
     items = []
@@ -2941,7 +2922,7 @@ def catalog_mcp_profiles(
 
 @catalog_app.command("skills")
 def catalog_skills(
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
 ) -> None:
     """List bundled benchmark skill packs and prompt footprint metadata."""
     items = []
@@ -2963,7 +2944,7 @@ def catalog_skills(
 
 @catalog_app.command("lcp-profiles")
 def catalog_lcp_profiles(
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
 ) -> None:
     """List deterministic LCP-style context fixture profiles bundled with AgentBlaster."""
     items = lcp_profile_catalog()
@@ -2973,7 +2954,7 @@ def catalog_lcp_profiles(
 @catalog_app.command("workflow-surfaces")
 def catalog_workflow_surfaces(
     format: Annotated[str, typer.Option("--format", help="Output format: text, json, or markdown.")] = "text",
-    output: Annotated[Path | None, typer.Option(help="Optional output path for JSON or Markdown formats.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path for JSON or Markdown formats.")] = None,
 ) -> None:
     """List benchmark workflow surfaces: tools, MCP, skills, LCP, and harness-engineering profiles."""
     normalized = format.strip().lower()
@@ -2999,7 +2980,7 @@ def catalog_workflow_surfaces(
 @catalog_app.command("telemetry-mappings")
 def catalog_telemetry_mappings(
     format: Annotated[str, typer.Option("--format", help="Output format: text, json, or markdown.")] = "text",
-    output: Annotated[Path | None, typer.Option(help="Optional output path for JSON or Markdown formats.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path for JSON or Markdown formats.")] = None,
 ) -> None:
     """List raw-to-normalized telemetry mappings for supported provider families."""
     normalized = format.strip().lower()
@@ -3019,7 +3000,7 @@ def catalog_telemetry_mappings(
     typer.echo(content, nl=False)
 
 
-def _emit_catalog(catalog: str, items: list[dict], output_json: Path | None) -> None:
+def _emit_catalog(catalog: str, items: list[dict], output_json: Optional[Path]) -> None:
     payload = {"catalog": catalog, "items": items}
     if output_json is not None:
         output_json.parent.mkdir(parents=True, exist_ok=True)
@@ -3051,14 +3032,14 @@ def _tool_schema_display_name(schema: dict) -> str:
 def evidence_bundle(
     output_dir: Annotated[Path, typer.Option(help="Directory for the evidence bundle zip.")],
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to include in suite audit.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to include instead of a built-in suite.")] = None,
-    policy: Annotated[Path | None, typer.Option(help="Optional reviewed policy file to include in the bundle.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to include instead of a built-in suite.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional reviewed policy file to include in the bundle.")] = None,
     project_root: Annotated[Path, typer.Option(help="Project root containing pyproject.toml.")] = Path("."),
     include_provider_audit: Annotated[
         bool,
         typer.Option(help="Include redacted provider audit metadata from configured providers."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for evidence bundle events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for evidence bundle events.")] = None,
 ) -> None:
     """Create a static redaction-safe governance evidence bundle."""
     try:
@@ -3103,7 +3084,7 @@ def harness_generate(
         ),
     ] = "contract-fuzz",
     suite: Annotated[str, typer.Option(help="Built-in suite to use as the source.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite file to use instead of a built-in suite.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite file to use instead of a built-in suite.")] = None,
     repeats: Annotated[int, typer.Option(help="Number of deterministic repetitions per source case.")] = 4,
     seed: Annotated[int, typer.Option(help="Deterministic generation seed marker.")] = 0,
 ) -> None:
@@ -3121,8 +3102,8 @@ def harness_generate(
 @harness_app.command("review")
 def harness_review(
     suite: Annotated[str, typer.Option(help="Built-in suite to review when --suite-file is not set.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite file to review.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path for the review artifact.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite file to review.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path for the review artifact.")] = None,
 ) -> None:
     """Write a static, redaction-safe review artifact for a harness suite."""
     try:
@@ -3188,11 +3169,11 @@ def model_matrix(
         typer.Option(help="Comma-separated model target ids."),
     ] = "qwen3.6-27b-dense,gemma-4-31b-dense",
     suite: Annotated[str, typer.Option(help="Built-in suite name for each matrix run.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="Optional suite file path for each matrix run.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="Optional suite file path for each matrix run.")] = None,
     concurrency: Annotated[int, typer.Option(help="Concurrency for each matrix run.")] = 1,
     raw_traces: Annotated[RawTraceMode, typer.Option(help="Raw trace mode for generated runs.")] = RawTraceMode.REDACTED,
     no_raw_traces: Annotated[bool, typer.Option(help="Disable raw response capture in generated runs.")] = True,
-    name: Annotated[str | None, typer.Option(help="Optional matrix name override.")] = None,
+    name: Annotated[Optional[str], typer.Option(help="Optional matrix name override.")] = None,
 ) -> None:
     """Generate a canonical provider x model target matrix file."""
     try:
@@ -3221,8 +3202,8 @@ def experiment_manifest_command(
     targets: Annotated[str, typer.Option(help="Comma-separated model target ids.")],
     suites: Annotated[str, typer.Option(help="Comma-separated suite names.")],
     output: Annotated[Path, typer.Option(help="Output experiment manifest JSON path.")],
-    policy: Annotated[Path | None, typer.Option(help="Optional policy file path.")] = None,
-    matrix: Annotated[Path | None, typer.Option(help="Optional matrix YAML path.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional policy file path.")] = None,
+    matrix: Annotated[Optional[Path], typer.Option(help="Optional matrix YAML path.")] = None,
     calibration_required: Annotated[bool, typer.Option(help="Require suite calibration reports in preflight artifacts.")] = False,
     min_case_pass_rate: Annotated[float, typer.Option(help="Minimum accepted matrix case pass rate.")] = 95.0,
     max_failed_runs: Annotated[int, typer.Option(help="Maximum accepted failed matrix runs.")] = 0,
@@ -3247,7 +3228,7 @@ def experiment_manifest_command(
 @experiment_app.command("gate")
 def experiment_gate_command(
     manifest: Annotated[Path, typer.Argument(help="Experiment manifest JSON path.")],
-    output_json: Annotated[Path | None, typer.Option(help="Optional gate report JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional gate report JSON output path.")] = None,
     require_policy: Annotated[bool, typer.Option(help="Require the manifest to reference a policy file.")] = False,
 ) -> None:
     """Evaluate a static experiment manifest before benchmark execution."""
@@ -3271,9 +3252,9 @@ def list_engines() -> None:
 
 @engines_app.command("targets")
 def engine_targets_command(
-    target: Annotated[str | None, typer.Option(help="Optional engine target id to show.")] = None,
+    target: Annotated[Optional[str], typer.Option(help="Optional engine target id to show.")] = None,
     format: Annotated[str, typer.Option("--format", help="Output format: text, json, or markdown.")] = "text",
-    output: Annotated[Path | None, typer.Option(help="Optional output path for JSON or Markdown formats.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path for JSON or Markdown formats.")] = None,
 ) -> None:
     """List standardized benchmark target engines and readiness metadata."""
     normalized = format.strip().lower()
@@ -3316,13 +3297,13 @@ def engine_targets_command(
 
 @engines_app.command("launch-recipes")
 def launch_recipes_command(
-    engine: Annotated[str | None, typer.Option(help="Engine recipe to render. Omit with --catalog.")] = None,
+    engine: Annotated[Optional[str], typer.Option(help="Engine recipe to render. Omit with --catalog.")] = None,
     model: Annotated[str, typer.Option(help="Model id to insert into the launch recipe.")] = "mlx-community/Qwen3.6-27B",
     host: Annotated[str, typer.Option(help="Host to insert into the launch recipe.")] = "127.0.0.1",
-    port: Annotated[int | None, typer.Option(help="Optional port override.")] = None,
-    provider_name: Annotated[str | None, typer.Option(help="Provider profile name to use in generated commands.")] = None,
+    port: Annotated[Optional[int], typer.Option(help="Optional port override.")] = None,
+    provider_name: Annotated[Optional[str], typer.Option(help="Provider profile name to use in generated commands.")] = None,
     catalog: Annotated[bool, typer.Option(help="Render the launch recipe catalog instead of one recipe.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON output path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON output path.")] = None,
     markdown: Annotated[bool, typer.Option(help="Render Markdown instead of compact text.")] = False,
 ) -> None:
     """Render safe local engine launch and provider setup recipes without executing them."""
@@ -3354,9 +3335,9 @@ def launch_recipes_command(
 
 @engines_app.command("onboarding")
 def engines_onboarding_command(
-    engines: Annotated[str | None, typer.Option(help="Comma-separated local engines. Defaults to all local presets.")] = None,
+    engines: Annotated[Optional[str], typer.Option(help="Comma-separated local engines. Defaults to all local presets.")] = None,
     model: Annotated[str, typer.Option(help="Model id to insert into launch recipes.")] = "mlx-community/Qwen3.6-27B",
-    output: Annotated[Path | None, typer.Option(help="Optional output path for the onboarding artifact.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path for the onboarding artifact.")] = None,
     format: Annotated[str, typer.Option("--format", help="Output format: markdown or json.")] = "markdown",
 ) -> None:
     """Render a static local-engine onboarding checklist for comparable benchmark setup."""
@@ -3399,15 +3380,15 @@ def probe(
 @providers_app.command("onboarding")
 def provider_onboarding(
     preset: Annotated[str, typer.Option(help="Remote provider preset: openai, openai-responses, or anthropic.")],
-    name: Annotated[str | None, typer.Option(help="Provider profile name to create in the generated commands.")] = None,
+    name: Annotated[Optional[str], typer.Option(help="Provider profile name to create in the generated commands.")] = None,
     secret_mode: Annotated[str, typer.Option(help="Secret backend mode for the plan: env, keyring, or dotenv.")] = "env",
-    api_key_env: Annotated[str | None, typer.Option(help="Environment variable name for env mode or key staging.")] = None,
-    dotenv_file: Annotated[str | None, typer.Option(help="Plaintext dotenv file path for dotenv-mode onboarding plans.")] = None,
-    base_url: Annotated[str | None, typer.Option(help="Optional remote base URL override.")] = None,
-    model: Annotated[str | None, typer.Option(help="Model id to use in readiness, contract-check, and smoke commands.")] = None,
-    policy: Annotated[Path | None, typer.Option(help="Policy file path referenced by audit/readiness commands.")] = None,
+    api_key_env: Annotated[Optional[str], typer.Option(help="Environment variable name for env mode or key staging.")] = None,
+    dotenv_file: Annotated[Optional[str], typer.Option(help="Plaintext dotenv file path for dotenv-mode onboarding plans.")] = None,
+    base_url: Annotated[Optional[str], typer.Option(help="Optional remote base URL override.")] = None,
+    model: Annotated[Optional[str], typer.Option(help="Model id to use in readiness, contract-check, and smoke commands.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Policy file path referenced by audit/readiness commands.")] = None,
     format: Annotated[str, typer.Option("--format", help="Output format: markdown or json.")] = "markdown",
-    output: Annotated[Path | None, typer.Option(help="Optional output path for the onboarding artifact.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional output path for the onboarding artifact.")] = None,
 ) -> None:
     """Render a secure, redaction-safe onboarding plan for a remote provider."""
     try:
@@ -3444,37 +3425,34 @@ def add_provider(
     name: Annotated[str, typer.Option(help="Provider profile name.")],
     contract: Annotated[ApiContract, typer.Option(help="API contract implemented by the provider.")],
     base_url: Annotated[str, typer.Option(help="Provider base URL.")],
-    default_model: Annotated[str | None, typer.Option(help="Optional default model id.")] = None,
-    model_revision: Annotated[str | None, typer.Option(help="Default model revision/hash metadata.")] = None,
-    model_architecture: Annotated[str | None, typer.Option(help="Default model architecture metadata.")] = None,
-    quantization: Annotated[str | None, typer.Option(help="Default model quantization metadata.")] = None,
-    tokenizer: Annotated[str | None, typer.Option(help="Default tokenizer metadata.")] = None,
-    chat_template: Annotated[str | None, typer.Option(help="Default chat template metadata.")] = None,
-    context_length: Annotated[int | None, typer.Option(help="Default context length metadata.")] = None,
-    api_key_env: Annotated[
-        str | None,
+    default_model: Annotated[Optional[str], typer.Option(help="Optional default model id.")] = None,
+    model_revision: Annotated[Optional[str], typer.Option(help="Default model revision/hash metadata.")] = None,
+    model_architecture: Annotated[Optional[str], typer.Option(help="Default model architecture metadata.")] = None,
+    quantization: Annotated[Optional[str], typer.Option(help="Default model quantization metadata.")] = None,
+    tokenizer: Annotated[Optional[str], typer.Option(help="Default tokenizer metadata.")] = None,
+    chat_template: Annotated[Optional[str], typer.Option(help="Default chat template metadata.")] = None,
+    context_length: Annotated[Optional[int], typer.Option(help="Default context length metadata.")] = None,
+    api_key_env: Annotated[Optional[str],
         typer.Option(help="Environment variable containing the API key."),
     ] = None,
-    header: Annotated[
-        list[str] | None,
+    header: Annotated[Optional[list[str]],
         typer.Option(help="Non-secret provider header formatted as name=value. Repeat for multiple headers."),
     ] = None,
-    metrics_url: Annotated[str | None, typer.Option(help="Optional Prometheus /metrics URL to snapshot before and after runs.")] = None,
-    native_adapter: Annotated[
-        str | None,
+    metrics_url: Annotated[Optional[str], typer.Option(help="Optional Prometheus /metrics URL to snapshot before and after runs.")] = None,
+    native_adapter: Annotated[Optional[str],
         typer.Option(help="Optional native adapter hint, for example ollama or lm-studio."),
     ] = None,
     tls_verify: Annotated[
         bool,
         typer.Option("--tls-verify/--no-tls-verify", help="Verify TLS certificates for HTTPS provider requests."),
     ] = True,
-    ca_bundle: Annotated[Path | None, typer.Option(help="Optional custom CA bundle path for enterprise TLS gateways.")] = None,
+    ca_bundle: Annotated[Optional[Path], typer.Option(help="Optional custom CA bundle path for enterprise TLS gateways.")] = None,
     remote: Annotated[bool, typer.Option(help="Mark provider as internet-facing/remote.")] = False,
     include_provider_audit: Annotated[
         bool,
         typer.Option(help="Accepted for compatibility; provider add always emits redacted audit metadata when --audit-log is set."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for provider config events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for provider config events.")] = None,
 ) -> None:
     """Add or update a provider profile."""
     api_key_ref = SecretRef(kind="env", name=api_key_env) if api_key_env else None
@@ -3519,7 +3497,7 @@ def add_provider(
     typer.echo(f"saved provider {provider.name}")
 
 
-def _parse_header_options(items: list[str] | None) -> dict[str, str]:
+def _parse_header_options(items: Optional[list[str]]) -> dict[str, str]:
     headers: dict[str, str] = {}
     for raw in items or []:
         if "=" not in raw:
@@ -3549,19 +3527,18 @@ def list_provider_presets() -> None:
 @providers_app.command("add-preset")
 def add_provider_preset(
     preset: Annotated[str, typer.Option(help="Built-in preset name.")],
-    name: Annotated[str | None, typer.Option(help="Provider profile name override.")] = None,
-    base_url: Annotated[str | None, typer.Option(help="Base URL override.")] = None,
-    api_key_env: Annotated[
-        str | None,
+    name: Annotated[Optional[str], typer.Option(help="Provider profile name override.")] = None,
+    base_url: Annotated[Optional[str], typer.Option(help="Base URL override.")] = None,
+    api_key_env: Annotated[Optional[str],
         typer.Option(help="Environment variable containing the API key. Overrides the preset default env ref."),
     ] = None,
-    metrics_url: Annotated[str | None, typer.Option(help="Optional Prometheus /metrics URL override.")] = None,
+    metrics_url: Annotated[Optional[str], typer.Option(help="Optional Prometheus /metrics URL override.")] = None,
     tls_verify: Annotated[
         bool,
         typer.Option("--tls-verify/--no-tls-verify", help="Verify TLS certificates for HTTPS provider requests."),
     ] = True,
-    ca_bundle: Annotated[Path | None, typer.Option(help="Optional custom CA bundle path for enterprise TLS gateways.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for provider config events.")] = None,
+    ca_bundle: Annotated[Optional[Path], typer.Option(help="Optional custom CA bundle path for enterprise TLS gateways.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for provider config events.")] = None,
 ) -> None:
     """Add or update a provider from a built-in preset."""
     provider = get_preset(preset).to_provider(name=name, base_url=base_url, api_key_env=api_key_env)
@@ -3649,16 +3626,14 @@ def provider_cost_set(
     provider: Annotated[str, typer.Option(help="Configured provider profile name.")],
     input_usd_per_1m_tokens: Annotated[float, typer.Option(help="Input token price in USD per 1M tokens.")],
     output_usd_per_1m_tokens: Annotated[float, typer.Option(help="Output token price in USD per 1M tokens.")],
-    cached_input_usd_per_1m_tokens: Annotated[
-        float | None,
+    cached_input_usd_per_1m_tokens: Annotated[Optional[float],
         typer.Option(help="Optional cached-input/read price in USD per 1M tokens."),
     ] = None,
-    cache_write_usd_per_1m_tokens: Annotated[
-        float | None,
+    cache_write_usd_per_1m_tokens: Annotated[Optional[float],
         typer.Option(help="Optional cache-write price in USD per 1M tokens."),
     ] = None,
-    request_usd: Annotated[float | None, typer.Option(help="Optional fixed request price in USD.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for cost model events.")] = None,
+    request_usd: Annotated[Optional[float], typer.Option(help="Optional fixed request price in USD.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for cost model events.")] = None,
 ) -> None:
     """Set provider cost model metadata used by dry-run and policy cost ceilings."""
     if input_usd_per_1m_tokens < 0 or output_usd_per_1m_tokens < 0:
@@ -3708,7 +3683,7 @@ def provider_cost_show(provider: Annotated[str, typer.Option(help="Configured pr
 @providers_cost_app.command("clear")
 def provider_cost_clear(
     provider: Annotated[str, typer.Option(help="Configured provider profile name.")],
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for cost model events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for cost model events.")] = None,
 ) -> None:
     """Remove provider cost model metadata."""
     store = ProviderStore()
@@ -3721,10 +3696,10 @@ def provider_cost_clear(
 @providers_rate_limits_app.command("set")
 def provider_rate_limits_set(
     provider: Annotated[str, typer.Option(help="Configured provider profile name.")],
-    max_concurrency: Annotated[int | None, typer.Option(help="Provider-level maximum concurrent requests.")] = None,
-    requests_per_second: Annotated[float | None, typer.Option(help="Provider request rate limit in requests per second.")] = None,
-    requests_per_minute: Annotated[float | None, typer.Option(help="Provider request rate limit in requests per minute.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for rate-limit events.")] = None,
+    max_concurrency: Annotated[Optional[int], typer.Option(help="Provider-level maximum concurrent requests.")] = None,
+    requests_per_second: Annotated[Optional[float], typer.Option(help="Provider request rate limit in requests per second.")] = None,
+    requests_per_minute: Annotated[Optional[float], typer.Option(help="Provider request rate limit in requests per minute.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for rate-limit events.")] = None,
 ) -> None:
     """Set provider request pacing and concurrency metadata."""
     if max_concurrency is None and requests_per_second is None and requests_per_minute is None:
@@ -3772,7 +3747,7 @@ def provider_rate_limits_show(provider: Annotated[str, typer.Option(help="Config
 @providers_rate_limits_app.command("clear")
 def provider_rate_limits_clear(
     provider: Annotated[str, typer.Option(help="Configured provider profile name.")],
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for rate-limit events.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for rate-limit events.")] = None,
 ) -> None:
     """Remove provider request pacing and concurrency metadata."""
     store = ProviderStore()
@@ -3784,8 +3759,8 @@ def provider_rate_limits_clear(
 
 @providers_app.command("audit")
 def audit_provider_profiles(
-    policy: Annotated[Path | None, typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
-    output_json: Annotated[Path | None, typer.Option(help="Optional redacted provider audit JSON output path.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional agentblaster.policy.yaml path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional redacted provider audit JSON output path.")] = None,
 ) -> None:
     """Audit configured providers against policy without resolving secrets or contacting endpoints."""
     try:
@@ -3806,9 +3781,9 @@ def audit_provider_profiles(
 def check_provider_suite(
     provider: Annotated[str, typer.Option(help="Configured provider profile name.")],
     suite: Annotated[str, typer.Option(help="Built-in benchmark suite to check.")] = "smoke",
-    suite_file: Annotated[Path | None, typer.Option(help="YAML suite definition to check.")] = None,
+    suite_file: Annotated[Optional[Path], typer.Option(help="YAML suite definition to check.")] = None,
     strict_unknown: Annotated[bool, typer.Option(help="Fail when required capabilities are unknown.")] = False,
-    output_json: Annotated[Path | None, typer.Option(help="Optional JSON compatibility report path.")] = None,
+    output_json: Annotated[Optional[Path], typer.Option(help="Optional JSON compatibility report path.")] = None,
 ) -> None:
     """Check whether a provider declares support for a suite's required capabilities."""
     try:
@@ -3895,24 +3870,21 @@ def _default_dotenv_secret_variable(provider: str) -> str:
 def set_auth(
     provider: Annotated[str, typer.Option(help="Provider profile name.")],
     api_key_stdin: Annotated[bool, typer.Option(help="Read API key from stdin and store in keyring.")] = False,
-    api_key_env: Annotated[
-        str | None,
+    api_key_env: Annotated[Optional[str],
         typer.Option(help="Use an environment variable as the provider API key reference."),
     ] = None,
-    api_key_dotenv_file: Annotated[
-        Path | None,
+    api_key_dotenv_file: Annotated[Optional[Path],
         typer.Option(help="Read API key from stdin and store it in an explicit plaintext .env fallback file."),
     ] = None,
-    dotenv_var: Annotated[
-        str | None,
+    dotenv_var: Annotated[Optional[str],
         typer.Option(help="Variable name to use with --api-key-dotenv-file."),
     ] = None,
     allow_plaintext_secret_file: Annotated[
         bool,
         typer.Option(help="Required with --api-key-dotenv-file to acknowledge plaintext secret-file storage."),
     ] = False,
-    policy: Annotated[Path | None, typer.Option(help="Optional policy file to enforce before storing writable secrets.")] = None,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for secret reference changes.")] = None,
+    policy: Annotated[Optional[Path], typer.Option(help="Optional policy file to enforce before storing writable secrets.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for secret reference changes.")] = None,
 ) -> None:
     """Configure a provider API-key reference without storing plaintext config secrets."""
     secret_source_count = sum(source is not None and source is not False for source in (api_key_stdin, api_key_env, api_key_dotenv_file))
@@ -4027,7 +3999,7 @@ def clear_auth(
         bool,
         typer.Option(help="Also delete the referenced keyring secret when the provider uses a keyring reference."),
     ] = False,
-    audit_log: Annotated[Path | None, typer.Option(help="Optional JSONL audit log path for secret reference changes.")] = None,
+    audit_log: Annotated[Optional[Path], typer.Option(help="Optional JSONL audit log path for secret reference changes.")] = None,
 ) -> None:
     """Clear a provider API-key reference and optionally delete keyring secret material."""
     store = ProviderStore()
@@ -4083,7 +4055,7 @@ def _print_probe(provider: ProviderConfig) -> None:
 @quality_app.command("gates")
 def quality_gates(
     format: Annotated[str, typer.Option("--format", help="Output format: json or markdown.")] = "json",
-    output: Annotated[Path | None, typer.Option(help="Optional path to write the SDLC gate catalog.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional path to write the SDLC gate catalog.")] = None,
 ) -> None:
     """Render AgentBlaster's SDLC gate catalog for CI and release evidence."""
     normalized = format.strip().lower()
@@ -4104,7 +4076,7 @@ def quality_gates(
 @quality_app.command("validation-manifest")
 def quality_validation_manifest(
     format: Annotated[str, typer.Option("--format", help="Output format: json or markdown.")] = "json",
-    output: Annotated[Path | None, typer.Option(help="Optional path to write the SDLC validation manifest.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional path to write the SDLC validation manifest.")] = None,
     name: Annotated[str, typer.Option(help="Manifest name for the SDLC validation plan.")] = "agentblaster-sdlc",
     dashboard_url: Annotated[str, typer.Option(help="Dashboard URL used by Chrome/Codex and browser checks.")] = "http://127.0.0.1:8765",
     fixture_dir: Annotated[str, typer.Option(help="Deterministic dashboard fixture directory.")] = "tests/fixtures/dashboard-runs",
@@ -4142,7 +4114,7 @@ def quality_validation_manifest(
 @quality_app.command("gui-spec")
 def quality_gui_spec(
     format: Annotated[str, typer.Option("--format", help="Output format: json or markdown.")] = "json",
-    output: Annotated[Path | None, typer.Option(help="Optional path to write the GUI test specification.")] = None,
+    output: Annotated[Optional[Path], typer.Option(help="Optional path to write the GUI test specification.")] = None,
     dashboard_url: Annotated[str, typer.Option(help="Dashboard URL used by Chrome/Codex and browser checks.")] = "http://127.0.0.1:8765",
     fixture_dir: Annotated[str, typer.Option(help="Deterministic dashboard fixture directory.")] = "tests/fixtures/dashboard-runs",
     evidence_dir: Annotated[str, typer.Option(help="Directory where Chrome/Codex GUI evidence should be collected.")] = "test-reports/gui",

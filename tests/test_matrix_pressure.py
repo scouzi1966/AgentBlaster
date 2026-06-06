@@ -59,7 +59,7 @@ def test_write_matrix_pressure_json(tmp_path) -> None:
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["matrix"] == "pressure-demo"
-    assert payload["totals"]["case_count"] == 1
+    assert payload["totals"]["case_count"] == 15
 
 
 def test_cli_matrix_pressure_audit_writes_json(tmp_path) -> None:

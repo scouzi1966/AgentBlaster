@@ -59,7 +59,7 @@ def test_implementation_status_reports_static_project_inventory() -> None:
     }
     assert report["requirements_inventory"]["harness_engineering"]["built_in_suite_present"] is True
     assert report["requirements_inventory"]["harness_engineering"]["tool_parser_repair_suite_present"] is True
-    assert report["requirements_inventory"]["harness_engineering"]["tool_parser_repair_case_count"] == 2
+    assert report["requirements_inventory"]["harness_engineering"]["tool_parser_repair_case_count"] == 15
     assert {
         "harness-contract-streaming-sentinel",
         "harness-metamorphic-equivalent-wrapper",

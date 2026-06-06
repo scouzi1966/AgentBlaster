@@ -2372,7 +2372,7 @@ def test_dashboard_run_plan_preview_is_no_dispatch_and_redaction_safe(monkeypatc
     assert preview["plan"]["model"] == "qwen-default"
     assert preview["plan"]["raw_trace_mode"] == "off"
     assert preview["plan"]["concurrency"] == 2
-    assert preview["plan"]["total_cases"] == 1
+    assert preview["plan"]["total_cases"] == 15
     assert preview["plan"]["cases"][0]["capability_surfaces"] == []
     assert audit["event"] == "run_plan_previewed"
     assert audit["source"] == "dashboard"
@@ -2794,7 +2794,7 @@ def test_dashboard_http_handler_serves_run_plan_without_launching(monkeypatch, t
         assert payload["safety"]["dispatches_requests"] is False
         assert payload["safety"]["writes_run_artifacts"] is False
         assert payload["plan"]["provider"] == "local-openai"
-        assert payload["plan"]["total_cases"] == 1
+        assert payload["plan"]["total_cases"] == 15
         assert not list(runs_dir.glob("*/results.jsonl"))
 
         form_response = httpx.post(

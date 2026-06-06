@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import builtins
+import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,6 +13,23 @@ from typer.testing import CliRunner
 
 from agentblaster.cli import app
 from agentblaster.models import ApiContract, RawTraceMode, RetentionPolicy, RunManifest
+
+
+def _mock_openai_marker_response(body: bytes) -> bytes:
+    payload = json.loads(body.decode() or "{}") if body else {}
+    text_parts: list[str] = []
+    for message in payload.get("messages", []):
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str):
+            text_parts.append(content)
+    text = "\n".join(text_parts)
+    marker = next(iter(re.findall(r"agentblaster-[A-Za-z0-9_.-]+", text)), "agentblaster-ok")
+    return json.dumps(
+        {
+            "choices": [{"message": {"content": marker}}],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+        }
+    ).encode()
 
 
 def test_cli_adds_and_lists_provider(monkeypatch, tmp_path) -> None:
@@ -1261,9 +1279,10 @@ def test_cli_suite_requirements_reports_required_capabilities() -> None:
     result = runner.invoke(app, ["suite-requirements", "--suite", "trace-replay"])
 
     assert result.exit_code == 0, result.output
-    assert "chat\tcases=trace-replay-tool-result-summary" in result.output
-    assert "trace_replay\tcases=trace-replay-tool-result-summary" in result.output
-    assert "tool_calling\tcases=trace-replay-tool-result-summary" in result.output
+    assert "chat\tcases=" in result.output
+    assert "trace_replay\tcases=" in result.output
+    assert "tool_calling\tcases=" in result.output
+    assert "trace-replay-tool-result-summary" in result.output
 
 
 def test_cli_provider_check_suite_reports_compatibility_and_writes_json(monkeypatch, tmp_path) -> None:
@@ -1410,7 +1429,7 @@ def test_cli_run_dry_run_plans_without_writing_run_artifacts(monkeypatch, tmp_pa
     assert payload["dry_run"] is True
     assert payload["provider"] == "afm"
     assert payload["suite"] == "smoke"
-    assert payload["total_cases"] == 1
+    assert payload["total_cases"] == 15
     assert not (tmp_path / "runs").exists()
 
 
@@ -1819,19 +1838,11 @@ def test_cli_run_smoke_writes_artifacts(monkeypatch, tmp_path) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
             content_length = int(self.headers.get("content-length", "0"))
-            if content_length:
-                self.rfile.read(content_length)
+            body = self.rfile.read(content_length) if content_length else b""
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.end_headers()
-            self.wfile.write(
-                json.dumps(
-                    {
-                        "choices": [{"message": {"content": "agentblaster-ok"}}],
-                        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
-                    }
-                ).encode()
-            )
+            self.wfile.write(_mock_openai_marker_response(body))
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             return
@@ -1878,7 +1889,7 @@ def test_cli_run_smoke_writes_artifacts(monkeypatch, tmp_path) -> None:
 
         assert run_result.exit_code == 0, run_result.output
         assert "ok: true" in run_result.output
-        assert "total_cases: 1" in run_result.output
+        assert "total_cases: 15" in run_result.output
         assert "run_id:" in run_result.output
         assert list((tmp_path / "runs").glob("*/results.jsonl"))
     finally:
@@ -1889,19 +1900,11 @@ def test_cli_run_suite_file(monkeypatch, tmp_path) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
             content_length = int(self.headers.get("content-length", "0"))
-            if content_length:
-                self.rfile.read(content_length)
+            body = self.rfile.read(content_length) if content_length else b""
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.end_headers()
-            self.wfile.write(
-                json.dumps(
-                    {
-                        "choices": [{"message": {"content": "agentblaster-ok"}}],
-                        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
-                    }
-                ).encode()
-            )
+            self.wfile.write(_mock_openai_marker_response(body))
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             return
@@ -1969,19 +1972,11 @@ def test_cli_run_matrix(monkeypatch, tmp_path) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
             content_length = int(self.headers.get("content-length", "0"))
-            if content_length:
-                self.rfile.read(content_length)
+            body = self.rfile.read(content_length) if content_length else b""
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.end_headers()
-            self.wfile.write(
-                json.dumps(
-                    {
-                        "choices": [{"message": {"content": "agentblaster-ok"}}],
-                        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
-                    }
-                ).encode()
-            )
+            self.wfile.write(_mock_openai_marker_response(body))
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             return
@@ -2050,7 +2045,7 @@ runs:
         assert payload["runs"][0]["model"] == "qwen-test"
         assert payload["runs"][0]["suite"] == "smoke"
         assert payload["runs"][0]["ok"] is True
-        assert payload["runs"][0]["total_cases"] == 1
+        assert payload["runs"][0]["total_cases"] == 15
         assert Path(payload["runs"][0]["summary_path"]).name == "summary.json"
         assert (summary_path.parent / payload["runs"][0]["results_path"]).exists()
         assert (summary_path.parent / payload["runs"][0]["manifest_path"]).exists()

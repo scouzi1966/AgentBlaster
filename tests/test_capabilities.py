@@ -75,16 +75,15 @@ def test_suite_requirements_detect_agentic_features() -> None:
 def test_builtin_agentic_tool_loop_suite_declares_required_capabilities() -> None:
     requirements = {item.key: set(item.case_ids) for item in suite_requirements(BUILTIN_SUITES["agentic-tool-loop"])}
 
-    assert requirements["tool_calling"] == {
+    core_cases = {
         "tool-loop-route-final",
         "tool-loop-mcp-lcp-context",
         "tool-loop-max-call-boundary",
     }
-    assert requirements["tool_loop"] == {
-        "tool-loop-route-final",
-        "tool-loop-mcp-lcp-context",
-        "tool-loop-max-call-boundary",
-    }
+    assert core_cases.issubset(requirements["tool_calling"])
+    assert core_cases.issubset(requirements["tool_loop"])
+    assert len(requirements["tool_calling"]) == 15
+    assert len(requirements["tool_loop"]) == 15
     assert requirements["mcp_profile"] == {"tool-loop-mcp-lcp-context"}
     assert requirements["lcp_context"] == {"tool-loop-mcp-lcp-context"}
 
@@ -93,8 +92,16 @@ def test_builtin_harness_engineering_suite_declares_required_capabilities() -> N
     requirements = {item.key: set(item.case_ids) for item in suite_requirements(BUILTIN_SUITES["harness-engineering"])}
 
     assert requirements["streaming"] == {"harness-contract-streaming-sentinel"}
-    assert requirements["structured_output"] == {"harness-judge-rubric-json"}
-    assert requirements["judge_rubric"] == {"harness-judge-rubric-json"}
+    assert {
+        "harness-judge-rubric-json",
+        "harness-judge-rubric-security",
+        "harness-judge-rubric-release",
+    }.issubset(requirements["structured_output"])
+    assert {
+        "harness-judge-rubric-json",
+        "harness-judge-rubric-security",
+        "harness-judge-rubric-release",
+    }.issubset(requirements["judge_rubric"])
     assert requirements["prompt_caching"] == {"harness-cache-replay-static-prefix"}
 
 
